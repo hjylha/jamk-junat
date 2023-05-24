@@ -1,6 +1,8 @@
 # Junien kiihdytyksien tarkastelua
 
-Toistaiseksi tässä on kaksi notebookia:
+Toistaiseksi tässä on kolme notebookia:
+
+* notebookissa [kokeile_skripteja.ipynb](kokeile_skripteja.ipynb) voi kokeilla datan keräämiseen ja käsittelyyn tarkoitettuja skriptejä
 
 * [juna_digitraffic.ipynb](juna_digitraffic.ipynb) tutkailee digitraffic.fi:n [rautatieliikenteeseen liittyviä rajapintoja](https://www.digitraffic.fi/rautatieliikenne/)
 
