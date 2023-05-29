@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-# koordinaatit asteina, vastaus metreinä
+# koordinaatit asteina, palautusarvo m
 def coords_to_distance_w_pyttis(latitude1, longitude1, latitude2, longitude2):
     R = 6_371_000
     
@@ -19,7 +19,7 @@ def coords_to_distance_w_pyttis(latitude1, longitude1, latitude2, longitude2):
     return R * np.sqrt(x*x + y*y)
 
 
-# nopeus km/h, duration s
+# nopeus km/h, duration s, palautusarvo m
 def from_speed_to_distance(speeds, durations):
     distances = np.zeros(len(speeds))
     time_diff = durations[1:].to_numpy() - durations[:-1].to_numpy()
@@ -28,6 +28,7 @@ def from_speed_to_distance(speeds, durations):
 
 
 # arvioidaan nopeutta koordinaattien muutosten perusteella
+# muutokset m, duration s, palautusarvo km/h
 def approximate_speed(location_changes, durations):
     speed = np.zeros(len(location_changes))
     time_diff = durations[1:].to_numpy() - durations[:-1].to_numpy()
@@ -35,6 +36,7 @@ def approximate_speed(location_changes, durations):
     return speed
 
 
+# nopeus km/h, duration s, palautusarvo m/s/s
 def get_acceleration(speeds, durations):
     accel = np.zeros(len(speeds))
     speed_diff = speeds[1:].to_numpy() - speeds[:-1].to_numpy()
@@ -63,7 +65,7 @@ def get_stops(row, identifier=None, col_name="speed", previous_stops={"previous"
 def get_station(stop_num, list_of_stations):
     if stop_num > 0:
         return list_of_stations[stop_num - 1]
-    return None
+    return
 
 
 # get list of stations from location data (stops) and timetable
@@ -106,8 +108,10 @@ def get_train_nums(start_station, end_station, date):
     url_start = "https://rata.digitraffic.fi/api/v1/live-trains/"
     url = f"{url_start}station/{start_station}/{end_station}?departure_date={date}"
     req = requests.get(url)
+    if req.status_code == 200 and (train_list := req.json()):
+        return [train["trainNumber"] for train in train_list]
     if req.status_code == 200:
-        return [train["trainNumber"] for train in req.json()]
+        return
     raise Exception(f"Error: status code {req.status_code}")
 
 
@@ -116,8 +120,10 @@ def get_train_timetable(train_num, date):
     url_start = "https://rata.digitraffic.fi/api/v1/trains/"
     url = f"{url_start}{date}/{train_num}"    
     req = requests.get(url)
+    if req.status_code == 200 and (train_list := req.json()):
+        return pd.DataFrame(train_list[0]["timeTableRows"])
     if req.status_code == 200:
-        return pd.DataFrame(req.json()[0]["timeTableRows"])
+        return
     raise Exception(f"Error: status code {req.status_code}")
 
 
@@ -126,14 +132,19 @@ def get_train_location_data_from_api(train_num, date):
     url_start = "https://rata.digitraffic.fi/api/v1/train-locations/"
     url = f"{url_start}{date}/{train_num}"
     req = requests.get(url)
+    if req.status_code == 200 and (locations := req.json()):
+        return pd.DataFrame(locations)
     if req.status_code == 200:
-        return pd.DataFrame(req.json())
+        return
     raise Exception(f"Error: status code {req.status_code}")
 
 
 # get EVERYTHING
 def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=False):
     df = get_train_location_data_from_api(train_num, date)
+    if df is None:
+        print(f"Data not found: {train_num=}, {date=}")
+        return
     # aikamuodot kuntoon
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df["duration"] = (df["timestamp"] - df["timestamp"].min()).apply(lambda t: t.total_seconds())
