@@ -185,11 +185,11 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
     df["dist_from_speed"] = from_speed_to_distance(df["speed"], df["duration"]).cumsum()
 
     # nopeuksiakin voi arvioida koordinaattien avulla
-    df["speed_from_coords"] = approximate_speed(df["change_of_location"], df["duration"])
+    # df["speed_from_coords"] = approximate_speed(df["change_of_location"], df["duration"])
 
     # pysähdykset
     df["stops_from_speed"] = df.apply(lambda r: get_stops(r, id(df["speed"]), "speed"), axis=1)
-    df["stops_from_coords"] = df.apply(lambda r: get_stops(r, id(df["speed_from_coords"]), "speed_from_coords"), axis=1)
+    # df["stops_from_coords"] = df.apply(lambda r: get_stops(r, id(df["speed_from_coords"]), "speed_from_coords"), axis=1)
 
     # pysähdysasemat
     timetable = get_train_timetable(train_num, date)
@@ -231,9 +231,9 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
         print(f"Total distance travelled (based on coordinates): \t{round(df['dist_from_coords'].max() / 1000, 3)} km")
         print()
         print(f"Number of stops (based on speed): \t\t{df['stops_from_speed'].max()}")
-        print(f"Number of stops (based on coordinates): \t{df['stops_from_coords'].max()} (probably nonsense)")
+        # print(f"Number of stops (based on coordinates): \t{df['stops_from_coords'].max()} (probably nonsense)")
         stop_stations = df['station'].dropna().unique()
-        print(f"Stops ({len(stop_stations)}): {stop_stations}")
+        print(f"Stops at stations ({len(stop_stations)}): {stop_stations}")
         print()
 
         fig = plt.figure(figsize=(14, 6))
