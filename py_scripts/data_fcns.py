@@ -210,19 +210,22 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
     if with_all_graphs:
         fig1 = plt.figure(figsize=(14, 6))
         ax1 = fig1.add_subplot(121)
-        df.plot("duration", "dist_from_coords", ax=ax1)
-        df.plot("duration", "dist_from_speed", ax=ax1)
+        ax1.plot(df["duration"] / 3600, df["dist_from_coords"] / 1000)
+        ax1.plot(df["duration"] / 3600, df["dist_from_speed"] / 1000)
+        # df.plot("duration", "dist_from_coords", ax=ax1)
+        # df.plot("duration", "dist_from_speed", ax=ax1)
+        ax1.legend(["based on coords", "based on speed"])
         ax1.grid()
         ax1.set_title(f"Distance travelled by train {train_num} on {date}")
-        ax1.set_ylabel("distance ($m$)")
-        ax1.set_xlabel("duration ($s$)")
+        ax1.set_ylabel("distance ($km$)")
+        ax1.set_xlabel("duration ($h$)")
         # plt.show()
 
         ax2 = fig1.add_subplot(122)
-        ax2.plot(df["duration"], df["dist_from_speed"] - df["dist_from_coords"])
+        ax2.plot(df["duration"] / 3600, (df["dist_from_speed"] - df["dist_from_coords"]) / 1000)
         ax2.set_title(f"Difference of distances based on speed and coordinates (train {train_num}, date {date})")
         # ax2.set_ylabel("difference ($m$)")
-        ax2.set_xlabel("duration ($s$)")
+        ax2.set_xlabel("duration ($h$)")
         ax2.grid()
         plt.show()
 
@@ -242,18 +245,21 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
         fig.suptitle(f"Acceleration of train {train_num} on {date}")
         ax1 = fig.add_subplot(121)
 
-        df.plot("duration", "acceleration", ax=ax1)
-        ax1.set_xlabel("duration ($s$)")
+        ax1.scatter(df["duration"] / 3500, df["acceleration"], s=2)
+        # df.plot("duration", "acceleration", ax=ax1)
+        ax1.set_xlabel("duration ($h$)")
         ax1.set_ylabel("acceleration ($m/s^2$)")
+        ax1.set_ylim(-2, 2)
         ax1.grid()
         # plt.show()
 
         ax2 = fig.add_subplot(122)
-        df.plot("dist_from_speed", "acceleration", ax=ax2)
-        # df.plot("dist_from_coords", "acceleration", ax=ax)
+        ax2.scatter(df["dist_from_speed"] / 1000, df["acceleration"], s=2)
+        # df.plot("dist_from_speed", "acceleration", ax=ax2)
         # plt.title(f"Acceleration of train {train_num} on {date}")
-        ax2.set_xlabel("distance travelled ($m$)")
+        ax2.set_xlabel("distance travelled ($km$)")
         # ax2.set_ylabel("acceleration ($m/s^2$)")
+        ax2.set_ylim(-2, 2)
         ax2.grid()
         plt.show()
 
@@ -261,3 +267,9 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
         print()
 
     return df
+
+
+# datan valinta ehkä helpommin
+def get_locations_for_train(train_num, date, big_df):
+    return big_df[(big_df["trainNumber"] == train_num) & (big_df["departureDate"] == date)]
+
