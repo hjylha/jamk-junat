@@ -53,13 +53,11 @@ def get_stops(row, identifier=None, col_name="speed", previous_stops={"previous"
         previous_stops["stop_count"] += 1
         previous_stops["previous"] = previous_stops["stop_count"]
         return previous_stops["stop_count"]
-    elif row[col_name] == 0:
+    if row[col_name] == 0:
         return previous_stops["stop_count"]
-    elif row[col_name] > 0 and previous_stops["previous"] > 0:
+    if row[col_name] > 0 and previous_stops["previous"] > 0:
         previous_stops["previous"] = 0
-        return 0
-    else:
-        return 0
+    return 0
 
 
 def get_station(stop_num, list_of_stations):
@@ -74,6 +72,8 @@ def get_list_of_stations(loc_df, timetable_df):
     num_of_stops = loc_df["stops_from_speed"].max()
     for stop_num in range(1, num_of_stops + 1):
         stop_df = loc_df[loc_df["stops_from_speed"] == stop_num]
+        # ts_min = stop_df["timestamp"].min() - pd.Timedelta(1, "min")
+        # ts_max = stop_df["timestamp"].max() + pd.Timedelta(1, "min")
         ts_min = stop_df["timestamp"].min()
         ts_max = stop_df["timestamp"].max()
         
@@ -89,6 +89,7 @@ def get_list_of_stations(loc_df, timetable_df):
         if depart == arrive:
             stations.append(depart)
         else:
+            # print(f"{stop_num=} no match: {depart=}, {arrive=}")
             stations.append(None)
     return stations
 
@@ -181,6 +182,7 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
 
     # pysähdysasemat
     timetable = get_train_timetable(train_num, date)
+    timetable = timetable[timetable["trainStopping"]]
     timetable["scheduledTime"] = pd.to_datetime(timetable["scheduledTime"])
     timetable["actualTime"] = timetable.apply(fill_times, axis=1)
     timetable = timetable.loc[:, ["stationShortCode", "actualTime"]]
