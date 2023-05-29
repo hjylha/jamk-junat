@@ -155,6 +155,8 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
     df.drop("location", inplace=True, axis=1)
 
     # toivottavasti näitäkään ei tarvita
+    if "accuracy" in df.columns:
+        df.drop("accuracy", inplace=True, axis=1)
     # df.drop(["trainNumber", "departureDate"], inplace=True, axis=1)
 
     # onko sorttaus paikallaan?
