@@ -109,7 +109,11 @@ def get_train_nums(start_station, end_station, date):
     url = f"{url_start}station/{start_station}/{end_station}?departure_date={date}"
     req = requests.get(url)
     if req.status_code == 200 and (train_list := req.json()):
-        return [train["trainNumber"] for train in train_list]
+        timetable = pd.DataFrame()
+        for train in train_list:
+            timetable = pd.concat([timetable, pd.DataFrame(train["timeTableRows"])])
+        return timetable
+        # return [train["trainNumber"] for train in train_list]
     if req.status_code == 200:
         return
     raise Exception(f"Error: status code {req.status_code}")
