@@ -108,12 +108,28 @@ def get_train_nums(start_station, end_station, date):
     url_start = "https://rata.digitraffic.fi/api/v1/live-trains/"
     url = f"{url_start}station/{start_station}/{end_station}?departure_date={date}"
     req = requests.get(url)
-    if req.status_code == 200 and (train_list := req.json()):
+    train_list = req.json()
+    if req.status_code == 200 and isinstance(train_list, list) and train_list:
         timetable = pd.DataFrame()
         for train in train_list:
             timetable = pd.concat([timetable, pd.DataFrame(train["timeTableRows"])])
         return timetable
         # return [train["trainNumber"] for train in train_list]
+    if req.status_code == 200:
+        return
+    raise Exception(f"Error: status code {req.status_code}")
+
+
+# date muodossa "yyyy-mm-dd"
+def get_train_timetables(date):
+    url_start = "https://rata.digitraffic.fi/api/v1/trains/"
+    url = f"{url_start}{date}"    
+    req = requests.get(url)
+    if req.status_code == 200 and (train_list := req.json()):
+        timetable = pd.DataFrame()
+        for train in train_list:
+            timetable = pd.concat([timetable, pd.DataFrame(train["timeTableRows"])])
+        return timetable
     if req.status_code == 200:
         return
     raise Exception(f"Error: status code {req.status_code}")
