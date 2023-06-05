@@ -112,7 +112,10 @@ def get_train_nums(start_station, end_station, date):
     if req.status_code == 200 and isinstance(train_list, list) and train_list:
         timetable = pd.DataFrame()
         for train in train_list:
-            timetable = pd.concat([timetable, pd.DataFrame(train["timeTableRows"])])
+            new_timetable = pd.DataFrame(train["timeTableRows"])
+            new_timetable = new_timetable[new_timetable["cancelled"] != True]
+            if not new_timetable.empty:
+                timetable = pd.concat([timetable, new_timetable])
         return timetable
         # return [train["trainNumber"] for train in train_list]
     if req.status_code == 200:
