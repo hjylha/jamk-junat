@@ -1,6 +1,8 @@
 # Junien kiihdytyksien tarkastelua
 
-Toistaiseksi tässä on kolme notebookia:
+Toistaiseksi tässä on neljä notebookia:
+
+* [klusterointikokeilu.ipynb](klusterointikokeilu.ipynb) tarkastelee Jämsä-Orivesi-välin junavuoroja ja yrittää klusteroida niitä kiihtyvyyksien perusteella.
 
 * notebookissa [kokeile_skripteja.ipynb](kokeile_skripteja.ipynb) voi kokeilla datan keräämiseen ja käsittelyyn tarkoitettuja skriptejä
 
