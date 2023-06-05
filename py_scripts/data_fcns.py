@@ -174,6 +174,9 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
     df["longitude"] = df["location"].apply(lambda d: d["coordinates"][0])
     df.drop("location", inplace=True, axis=1)
 
+    # ei toisteta dataa
+    df.drop_duplicates(inplace=True)
+
     # toivottavasti näitäkään ei tarvita
     if "accuracy" in df.columns:
         df.drop("accuracy", inplace=True, axis=1)
