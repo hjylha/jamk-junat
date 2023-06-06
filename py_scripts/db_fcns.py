@@ -30,12 +30,16 @@ def save_df_to_db(df, table_name, to_extra=False):
 
 def get_df_from_db(table_name, from_extra=False):
     db_path = EXTRA_DB_PATH if from_extra else DB_PATH
-    with sqlite3.connect(db_path) as conn:
-        try:
-            df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
-        except pd.io.sql.DatabaseError:
-            print("probably table {table_name} does not exist")
-            return
+    try:
+        with sqlite3.connect(db_path) as conn:
+            try:
+                df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
+            except pd.io.sql.DatabaseError:
+                print("probably table {table_name} does not exist")
+                return
+    except sqlite3.OperationalError:
+        print(f"probably no database at {db_path}")
+        return
 
     if "timestamp" in df.columns:
         df["timestamp"] = pd.to_datetime(df["timestamp"])
