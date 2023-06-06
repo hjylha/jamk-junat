@@ -1,0 +1,6 @@
+
+/py_scripts/extra_data_paths.py
+
+*pycache*
+.idea/
+.ipynb_checkpoints/
