@@ -6,6 +6,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from sklearn.cluster import KMeans
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.model_selection import train_test_split
+
 from .api_fcns import request_data
 
 
@@ -355,3 +361,92 @@ def get_distances_from_df(df):
     result = pd.concat([dist_from_speed, dist_from_coords], axis=1)
     return result.reset_index()
 
+
+def scale_distance(row, ref_df, best_dist_estimate):
+    # max_dist = df[(df["trainNumber"] == row["trainNumber"]) & (df["departureDate"] == row["departureDate"])]["dist_from_speed"].max()
+    max_dist = ref_df.loc[(row["trainNumber"], row["departureDate"]), "dist_from_speed"]
+    return row["dist_from_speed"] / max_dist * best_dist_estimate 
+
+
+# varmistetaan, että yllä max_dist palauttaa best_dist_estimaten
+def peculiar_rounding(num, reference_estimate):
+    res = round(num)
+    if res == reference:
+        return reference
+    return num
+
+
+def get_cluster_df(df, col_name="acceleration"):
+    result = pd.pivot_table(df, values=col_name, index=["departureDate", "trainNumber"], columns=["dist_from_speed"], aggfunc=np.mean)
+    return result.dropna()
+
+
+def run_kmeans(df_to_cluster, k, rng=None):
+    km = KMeans(n_clusters=k, n_init="auto", random_state=rng)
+    km.fit(df_to_cluster)
+    cluster_ids = km.predict(df_to_cluster)
+    return [km, cluster_ids]
+
+
+def get_clusters(clustering_results):
+    clusters = clustering_results.groupby("cluster_id")
+
+    table = pd.concat([clusters["acceleration_abs"].count(), clusters["acceleration_abs"].min(), clusters["acceleration_abs"].max(), clusters["acceleration_abs"].mean()], axis=1)
+    table.columns=["count", "min_mean_abs_accel", "max_mean_abs_accel", "mean_mean_abs_accel"]
+    return table.sort_values("count", ascending=False)
+
+
+# uudelleennimetään klusterit
+def get_replacements(cluster_counts, lower_bound):
+    clusters = cluster_counts[cluster_counts > lower_bound].sort_values(ascending=False)
+    return {c: i for i, c in enumerate(clusters.index)}
+
+
+def replacement_fcn(num, cluster_counts):
+    replacements = get_replacements(cluster_counts)
+    if replacements.get(num) is None:
+        return -1
+    return replacements[num]
+
+
+def test_clusters_with_knn(df, df_clusters, k_neighbors=5, test_size=0.2, rng=None):
+    x_train, x_test, y_train, y_test = train_test_split(df, df_clusters, test_size=0.2, random_state=rng)
+    knn = KNeighborsClassifier(n_neighbors=k_neighbors)
+    knn.fit(x_train, y_train)
+
+    y_pred = knn.predict(x_test)
+
+    print(f"Accuracy: {accuracy_score(y_test, y_pred)}\n")
+    print(classification_report(y_test, y_pred))
+
+    return knn
+
+
+def test_clusters_with_rfc(df, df_clusters, test_size=0.2, rng=None):
+    x_train, x_test, y_train, y_test = train_test_split(df, df_clusters, test_size=0.2, random_state=rng)
+    rfc = RandomForestClassifier()
+    rfc.fit(x_train, y_train)
+
+    y_pred = rfc.predict(x_test)
+
+    print(f"Accuracy: {rfc.score(x_test, y_test)}\n")
+    print(classification_report(y_test, y_pred))
+
+    return rfc
+
+
+def draw_kmeans_centroids(kmeans, checkpoints, clusters, max_plots=5):
+    fig, ax = plt.subplots(figsize=(14, 5))
+    c = clusters.value_counts().reset_index().rename({"index": "cluster_id", "cluster_id": "count"}, axis=1)
+    decrease = 0
+    for i in range(max_plots):
+        ax.plot(checkpoints / 1000, km.cluster_centers_[c.loc[i, "cluster_id"], :], alpha=0.8 - 0.4 * np.sqrt(decrease))
+        decrease += 1
+    
+    ax.set_title("Acceleration cluster centroids")
+    ax.set_ylabel("acceleration ($m/s^2$)")
+    ax.set_xlabel("distance ($km$)")
+    ax.set_ylim(-0.5, 0.5)
+    ax.legend(c["count"].sort_values(ascending=False).head(n))
+    ax.grid()
+    plt.show()
