@@ -4,6 +4,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from .api_fcns import request_data
+
 
 # koordinaatit asteina, palautusarvo m
 def coords_to_distance_w_pyttis(latitude1, longitude1, latitude2, longitude2):
@@ -43,6 +45,58 @@ def get_acceleration(speeds, durations):
     time_diff = durations[1:].to_numpy() - durations[:-1].to_numpy()
     accel[1:] = speed_diff / time_diff / 3.6
     return accel
+
+
+# piirretään kuvaajia
+def draw_distance_graphs(df):
+    train_num = df['trainNumber'].unique()[0]
+    date = df["departureDate"].unique()[0]
+    fig1 = plt.figure(figsize=(14, 6))
+    ax1 = fig1.add_subplot(121)
+    ax1.plot(df["duration"] / 3600, df["dist_from_coords"] / 1000)
+    ax1.plot(df["duration"] / 3600, df["dist_from_speed"] / 1000)
+    # df.plot("duration", "dist_from_coords", ax=ax1)
+    # df.plot("duration", "dist_from_speed", ax=ax1)
+    ax1.legend(["based on coords", "based on speed"])
+    ax1.grid()
+    ax1.set_title(f"Distance travelled by train {train_num} on {date}")
+    ax1.set_ylabel("distance ($km$)")
+    ax1.set_xlabel("duration ($h$)")
+    # plt.show()
+
+    ax2 = fig1.add_subplot(122)
+    ax2.plot(df["duration"] / 3600, (df["dist_from_speed"] - df["dist_from_coords"]) / 1000)
+    ax2.set_title(f"Difference of distances based on speed and coordinates (train {train_num}, date {date})")
+    # ax2.set_ylabel("difference ($m$)")
+    ax2.set_xlabel("duration ($h$)")
+    ax2.grid()
+    plt.show()
+
+
+def draw_acceleration_graphs(df):
+    train_num = df['trainNumber'].unique()[0]
+    date = df["departureDate"].unique()[0]
+    fig = plt.figure(figsize=(14, 6))
+    fig.suptitle(f"Acceleration of train {train_num} on {date}")
+    ax1 = fig.add_subplot(121)
+
+    ax1.scatter(df["duration"] / 3500, df["acceleration"], s=2)
+    # df.plot("duration", "acceleration", ax=ax1)
+    ax1.set_xlabel("duration ($h$)")
+    ax1.set_ylabel("acceleration ($m/s^2$)")
+    ax1.set_ylim(-2, 2)
+    ax1.grid()
+    # plt.show()
+
+    ax2 = fig.add_subplot(122)
+    ax2.scatter(df["dist_from_speed"] / 1000, df["acceleration"], s=2)
+    # df.plot("dist_from_speed", "acceleration", ax=ax2)
+    # plt.title(f"Acceleration of train {train_num} on {date}")
+    ax2.set_xlabel("distance travelled ($km$)")
+    # ax2.set_ylabel("acceleration ($m/s^2$)")
+    ax2.set_ylim(-2, 2)
+    ax2.grid()
+    plt.show()
 
 
 # numeroidaan pysähdykset, oletusarvojen ovelaa käyttöä toivottavasti...
@@ -105,11 +159,8 @@ def fill_times(row):
 
 # asemat stationShortCodena, date muodossa "yyyy-mm-dd"
 def get_train_nums(start_station, end_station, date):
-    url_start = "https://rata.digitraffic.fi/api/v1/live-trains/"
-    url = f"{url_start}station/{start_station}/{end_station}?departure_date={date}"
-    req = requests.get(url)
-    train_list = req.json()
-    if req.status_code == 200 and isinstance(train_list, list) and train_list:
+    train_list = request_data("live-trains", date=date, start_station=start_station, end_station=end_station)
+    if train_list is not None:
         timetable = pd.DataFrame()
         for train in train_list:
             new_timetable = pd.DataFrame(train["timeTableRows"])
@@ -117,49 +168,30 @@ def get_train_nums(start_station, end_station, date):
             if not new_timetable.empty:
                 timetable = pd.concat([timetable, new_timetable])
         return timetable
-        # return [train["trainNumber"] for train in train_list]
-    if req.status_code == 200:
-        return
-    raise Exception(f"Error: status code {req.status_code}")
 
 
 # date muodossa "yyyy-mm-dd"
 def get_train_timetables(date):
-    url_start = "https://rata.digitraffic.fi/api/v1/trains/"
-    url = f"{url_start}{date}"    
-    req = requests.get(url)
-    if req.status_code == 200 and (train_list := req.json()):
+    train_list = request_data("trains", date=date)
+    if train_list is not None:
         timetable = pd.DataFrame()
         for train in train_list:
             timetable = pd.concat([timetable, pd.DataFrame(train["timeTableRows"])])
         return timetable
-    if req.status_code == 200:
-        return
-    raise Exception(f"Error: status code {req.status_code}")
 
 
 # date muodossa "yyyy-mm-dd"
 def get_train_timetable(train_num, date):
-    url_start = "https://rata.digitraffic.fi/api/v1/trains/"
-    url = f"{url_start}{date}/{train_num}"    
-    req = requests.get(url)
-    if req.status_code == 200 and (train_list := req.json()):
+    train_list = request_data("trains", train_num=train_num, date=date)
+    if train_list is not None:
         return pd.DataFrame(train_list[0]["timeTableRows"])
-    if req.status_code == 200:
-        return
-    raise Exception(f"Error: status code {req.status_code}")
 
 
 # date muodossa "yyyy-mm-dd"
 def get_train_location_data_from_api(train_num, date):
-    url_start = "https://rata.digitraffic.fi/api/v1/train-locations/"
-    url = f"{url_start}{date}/{train_num}"
-    req = requests.get(url)
-    if req.status_code == 200 and (locations := req.json()):
+    locations = request_data("train-locations", train_num=train_num, date=date)
+    if locations is not None:
         return pd.DataFrame(locations)
-    if req.status_code == 200:
-        return
-    raise Exception(f"Error: status code {req.status_code}")
 
 
 # get EVERYTHING
@@ -178,7 +210,8 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
     df.drop("location", inplace=True, axis=1)
 
     # ei toisteta dataa
-    df.drop_duplicates(inplace=True)
+    # df.drop_duplicates(inplace=True)
+    df.drop_duplicates("timestamp", inplace=True)
 
     # toivottavasti näitäkään ei tarvita
     if "accuracy" in df.columns:
@@ -234,26 +267,7 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
 
     # pari kuvaajaa
     if with_all_graphs:
-        fig1 = plt.figure(figsize=(14, 6))
-        ax1 = fig1.add_subplot(121)
-        ax1.plot(df["duration"] / 3600, df["dist_from_coords"] / 1000)
-        ax1.plot(df["duration"] / 3600, df["dist_from_speed"] / 1000)
-        # df.plot("duration", "dist_from_coords", ax=ax1)
-        # df.plot("duration", "dist_from_speed", ax=ax1)
-        ax1.legend(["based on coords", "based on speed"])
-        ax1.grid()
-        ax1.set_title(f"Distance travelled by train {train_num} on {date}")
-        ax1.set_ylabel("distance ($km$)")
-        ax1.set_xlabel("duration ($h$)")
-        # plt.show()
-
-        ax2 = fig1.add_subplot(122)
-        ax2.plot(df["duration"] / 3600, (df["dist_from_speed"] - df["dist_from_coords"]) / 1000)
-        ax2.set_title(f"Difference of distances based on speed and coordinates (train {train_num}, date {date})")
-        # ax2.set_ylabel("difference ($m$)")
-        ax2.set_xlabel("duration ($h$)")
-        ax2.grid()
-        plt.show()
+        draw_distance_graphs(df)
 
     # kiihtyvyyskuvaajia
     if with_graphs:
@@ -267,29 +281,7 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
         print(f"Stops at stations ({len(stop_stations)}): {stop_stations}")
         print()
 
-        fig = plt.figure(figsize=(14, 6))
-        fig.suptitle(f"Acceleration of train {train_num} on {date}")
-        ax1 = fig.add_subplot(121)
-
-        ax1.scatter(df["duration"] / 3500, df["acceleration"], s=2)
-        # df.plot("duration", "acceleration", ax=ax1)
-        ax1.set_xlabel("duration ($h$)")
-        ax1.set_ylabel("acceleration ($m/s^2$)")
-        ax1.set_ylim(-2, 2)
-        ax1.grid()
-        # plt.show()
-
-        ax2 = fig.add_subplot(122)
-        ax2.scatter(df["dist_from_speed"] / 1000, df["acceleration"], s=2)
-        # df.plot("dist_from_speed", "acceleration", ax=ax2)
-        # plt.title(f"Acceleration of train {train_num} on {date}")
-        ax2.set_xlabel("distance travelled ($km$)")
-        # ax2.set_ylabel("acceleration ($m/s^2$)")
-        ax2.set_ylim(-2, 2)
-        ax2.grid()
-        plt.show()
-
-        
+        draw_acceleration_graphs(df)  
         print()
 
     return df
