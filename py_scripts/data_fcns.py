@@ -1,4 +1,6 @@
-import requests
+import time
+
+# import requests
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -24,16 +26,29 @@ def coords_to_distance_w_pyttis(latitude1, longitude1, latitude2, longitude2):
 # nopeus km/h, duration s, palautusarvo m
 def from_speed_to_distance(speeds, durations):
     distances = np.zeros(len(speeds))
-    time_diff = durations[1:].to_numpy() - durations[:-1].to_numpy()
-    distances[1:] = speeds[:-1] * time_diff / 3.6
+    # time_diff = durations[1:].to_numpy() - durations[:-1].to_numpy()
+    time_diff = durations.diff(1).to_numpy()[1:]
+    # distances[1:] = speeds[:-1] * time_diff / 3.6
+    # otetaan nopeuden muutos huomioon
+    distances[1:] = (speeds[:-1] * time_diff + 0.5 * speeds.diff(1).to_numpy()[1:] * time_diff) / 3.6
     return distances
+
+
+# aiemmin otettiin jo kiihtyvyys tavallaan mukaan
+# def from_speed_and_accel_to_distance(speeds, accels, durations):
+#     distances = np.zeros(len(speeds))
+#     time_diff = durations.diff(1).to_numpy()[1:]
+#     distances[1:] = (speeds[:-1] * time_diff + 0.5 * speeds.diff(1).to_numpy()[1:] * time_diff) / 3.6
+#     # distances[1:] = speeds[:-1] * time_diff / 3.6 + 0.5 * accels.to_numpy()[1:] * time_diff * time_diff
+#     return distances
 
 
 # arvioidaan nopeutta koordinaattien muutosten perusteella
 # muutokset m, duration s, palautusarvo km/h
 def approximate_speed(location_changes, durations):
     speed = np.zeros(len(location_changes))
-    time_diff = durations[1:].to_numpy() - durations[:-1].to_numpy()
+    # time_diff = durations[1:].to_numpy() - durations[:-1].to_numpy()
+    time_diff = durations.diff(1).to_numpy()[1:]
     speed[1:] = location_changes[1:] / time_diff * 3.6
     return speed
 
@@ -41,8 +56,10 @@ def approximate_speed(location_changes, durations):
 # nopeus km/h, duration s, palautusarvo m/s/s
 def get_acceleration(speeds, durations):
     accel = np.zeros(len(speeds))
-    speed_diff = speeds[1:].to_numpy() - speeds[:-1].to_numpy()
-    time_diff = durations[1:].to_numpy() - durations[:-1].to_numpy()
+    # speed_diff = speeds[1:].to_numpy() - speeds[:-1].to_numpy()
+    speed_diff = speeds.diff(1)[1:]
+    # time_diff = durations[1:].to_numpy() - durations[:-1].to_numpy()
+    time_diff = durations.diff(1).to_numpy()[1:]
     accel[1:] = speed_diff / time_diff / 3.6
     return accel
 
@@ -73,15 +90,16 @@ def draw_distance_graphs(df):
     plt.show()
 
 
-def draw_acceleration_graphs(df):
+def draw_acceleration_graphs(df, graph_type="scatter"):
     train_num = df['trainNumber'].unique()[0]
     date = df["departureDate"].unique()[0]
     fig = plt.figure(figsize=(14, 6))
     fig.suptitle(f"Acceleration of train {train_num} on {date}")
     ax1 = fig.add_subplot(121)
-
-    ax1.scatter(df["duration"] / 3500, df["acceleration"], s=2)
-    # df.plot("duration", "acceleration", ax=ax1)
+    if graph_type == "scatter":
+        ax1.scatter(df["duration"] / 3500, df["acceleration"], s=2)
+    elif graph_type == "plot":
+        ax1.plot(df["duration"] / 3500, df["acceleration"])
     ax1.set_xlabel("duration ($h$)")
     ax1.set_ylabel("acceleration ($m/s^2$)")
     ax1.set_ylim(-2, 2)
@@ -89,8 +107,10 @@ def draw_acceleration_graphs(df):
     # plt.show()
 
     ax2 = fig.add_subplot(122)
-    ax2.scatter(df["dist_from_speed"] / 1000, df["acceleration"], s=2)
-    # df.plot("dist_from_speed", "acceleration", ax=ax2)
+    if graph_type == "scatter":
+        ax2.scatter(df["dist_from_speed"] / 1000, df["acceleration"], s=2)
+    elif graph_type == "plot":
+        ax2.plot(df["dist_from_speed"] / 1000, df["acceleration"])
     # plt.title(f"Acceleration of train {train_num} on {date}")
     ax2.set_xlabel("distance travelled ($km$)")
     # ax2.set_ylabel("acceleration ($m/s^2$)")
@@ -242,6 +262,8 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
 
     # kuljettu matka koordinaattien muutosten summana
     df["dist_from_coords"] = df["change_of_location"].cumsum()
+    # kokeilu
+    # df["dist_from_coords"] = from_speed_and_accel_to_distance(df["speed"], df["acceleration"], df["duration"]).cumsum()
     # sama nopeuden kautta
     df["dist_from_speed"] = from_speed_to_distance(df["speed"], df["duration"]).cumsum()
 
@@ -290,4 +312,46 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
 # datan valinta ehkä helpommin
 def get_locations_for_train(train_num, date, big_df):
     return big_df[(big_df["trainNumber"] == train_num) & (big_df["departureDate"] == date)]
+
+
+def get_location_data_for_trains(trains_and_dates, start_station=None, end_station=None, sleeptime=None):
+    df = pd.DataFrame()
+    for num, date in trains_and_dates:
+        try:
+            new_df = get_train_location_data(num, date, False)
+        except KeyError as e:
+            print(f"{type(e).__name__}: {e} [{date=}, {num=}]")
+            continue
+        if new_df is None:
+            continue
+
+        if start_station is not None and end_station is not None:    
+            alku = new_df[new_df["station"] == start_station]
+            if len(alku) > 0:
+                index1 = alku.index.max()
+            else:
+                continue
+            loppu = new_df[new_df["station"] == end_station]
+            if len(loppu) > 0:
+                index2 = loppu.index.min()
+            else:
+                continue
+
+        new_df = new_df.loc[index1:index2, :]
+        new_df["dist_from_speed"] = new_df["dist_from_speed"] - new_df["dist_from_speed"].min()
+        new_df["dist_from_coords"] = new_df["dist_from_coords"] - new_df["dist_from_coords"].min()
+        df = pd.concat([df, new_df])
+
+        if sleeptime is not None:
+            time.sleep(sleeptime)
+
+    return df
+
+
+def get_distances_from_df(df):
+    groups = df.groupby(["trainNumber", "departureDate"])
+    dist_from_coords = groups["dist_from_coords"].max() - groups["dist_from_coords"].min()
+    dist_from_speed = groups["dist_from_speed"].max() - groups["dist_from_speed"].min()
+    result = pd.concat([dist_from_speed, dist_from_coords], axis=1)
+    return result.reset_index()
 
