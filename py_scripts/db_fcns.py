@@ -35,7 +35,7 @@ def get_df_from_db(table_name, from_extra=False):
             try:
                 df = pd.read_sql(f"SELECT * FROM {table_name}", conn)
             except pd.io.sql.DatabaseError:
-                print("probably table {table_name} does not exist")
+                print(f"probably table {table_name} does not exist")
                 return
     except sqlite3.OperationalError:
         print(f"probably no database at {db_path}")
