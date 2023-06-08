@@ -364,16 +364,50 @@ def get_distances_from_df(df):
 
 def scale_distance(row, ref_df, best_dist_estimate):
     # max_dist = df[(df["trainNumber"] == row["trainNumber"]) & (df["departureDate"] == row["departureDate"])]["dist_from_speed"].max()
-    max_dist = ref_df.loc[(row["trainNumber"], row["departureDate"]), "dist_from_speed"]
+    # max_dist = ref_df.loc[(row["trainNumber"], row["departureDate"]), "dist_from_speed"]
+    max_dist = ref_df.loc[(row["trainNumber"], row["departureDate"])]
     return row["dist_from_speed"] / max_dist * best_dist_estimate 
 
 
 # varmistetaan, että yllä max_dist palauttaa best_dist_estimaten
 def peculiar_rounding(num, reference_estimate):
     res = round(num)
-    if res == reference:
-        return reference
+    if res == reference_estimate:
+        return reference_estimate
     return num
+
+
+def accel_dict(num, date, dist, accel=None):
+    return {"trainNumber": num,
+            "departureDate": date,
+            "dist_from_speed": dist,
+            "acceleration": accel
+           }
+
+
+# keskitytään olennaiseen ja lisätään checkpointit
+def get_essential_df(big_df, best_dist_estimate, trains, checkpoint_interval=100):
+    df = big_df.loc[:, ["trainNumber", "departureDate", "dist_from_speed", "acceleration"]].copy()
+    df.reset_index(drop=True, inplace=True)
+
+    # skaalataan kuljettu matka (ja pyöristetään, jos tarvetta)
+    max_d = df.groupby(["trainNumber", "departureDate"])["dist_from_speed"].max()
+    dist = df.apply(lambda r: scale_distance(r, max_d, best_dist_estimate), axis=1)
+    df["dist_from_speed"] = dist.apply(lambda n: peculiar_rounding(n, best_dist_estimate))
+
+    # lisätään checkpointit
+    checkpoints = np.arange(0, best_dist_estimate + 1, checkpoint_interval)
+    additions = []
+    for train_num, date in trains:
+        for d in checkpoints[1:-1]:
+            additions.append(accel_dict(train_num, date, d))
+    df = pd.concat([df, pd.DataFrame(additions)])
+
+    # täytetään puuttuvat kiihtyvyysarvot
+    df = df.sort_values(["departureDate", "trainNumber", "dist_from_speed"])
+    df = df.fillna(method="bfill")
+
+    return df, checkpoints
 
 
 def get_cluster_df(df, col_name="acceleration"):
