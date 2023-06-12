@@ -436,11 +436,11 @@ def get_replacements(cluster_counts, lower_bound):
     return {c: i for i, c in enumerate(clusters.index)}
 
 
-def replacement_fcn(num, cluster_counts):
+def replacement_fcn(cluster_id, cluster_counts):
     replacements = get_replacements(cluster_counts)
-    if replacements.get(num) is None:
+    if replacements.get(cluster_id) is None:
         return -1
-    return replacements[num]
+    return replacements[cluster_id]
 
 
 def test_clusters_with_knn(df, df_clusters, k_neighbors=5, test_size=0.2, rng=None):
@@ -469,18 +469,19 @@ def test_clusters_with_rfc(df, df_clusters, test_size=0.2, rng=None):
     return rfc
 
 
+# clusters muotoa km.predict()
 def draw_kmeans_centroids(kmeans, checkpoints, clusters, max_plots=5):
     fig, ax = plt.subplots(figsize=(14, 5))
     c = clusters.value_counts().reset_index().rename({"index": "cluster_id", "cluster_id": "count"}, axis=1)
     decrease = 0
     for i in range(max_plots):
-        ax.plot(checkpoints / 1000, km.cluster_centers_[c.loc[i, "cluster_id"], :], alpha=0.8 - 0.4 * np.sqrt(decrease))
+        ax.plot(checkpoints / 1000, kmeans.cluster_centers_[c.loc[i, "cluster_id"], :], alpha=0.8 - 0.4 * np.sqrt(decrease))
         decrease += 1
     
     ax.set_title("Acceleration cluster centroids")
     ax.set_ylabel("acceleration ($m/s^2$)")
     ax.set_xlabel("distance ($km$)")
     ax.set_ylim(-0.5, 0.5)
-    ax.legend(c["count"].sort_values(ascending=False).head(n))
+    ax.legend(c["count"].head(max_plots))
     ax.grid()
     plt.show()
