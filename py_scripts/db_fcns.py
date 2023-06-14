@@ -17,11 +17,11 @@ except ModuleNotFoundError:
     EXTRA_DB_PATH = DB_PATH
 
 
-def save_df_to_db(df, table_name, to_extra=False):
+def save_df_to_db(df, table_name, to_extra=False, if_exists_action="fail"):
     db_path = EXTRA_DB_PATH if to_extra else DB_PATH
     with sqlite3.connect(db_path) as conn:
         try:
-            df.to_sql(name=table_name, con=conn, if_exists="fail", index=False)
+            df.to_sql(name=table_name, con=conn, if_exists=if_exists_action, index=False)
             conn.commit()
         except ValueError:
             print(f"Table {table_name} already exists")
