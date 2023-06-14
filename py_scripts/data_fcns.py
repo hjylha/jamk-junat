@@ -3,8 +3,8 @@ import time
 # import requests
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+# import matplotlib.pyplot as plt
+# import seaborn as sns
 
 from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
@@ -13,6 +13,7 @@ from sklearn.metrics import accuracy_score, classification_report
 from sklearn.model_selection import train_test_split
 
 from .api_fcns import request_data
+# from .data_fcns import draw_distance_graphs, draw_acceleration_graphs
 
 
 # koordinaatit asteina, palautusarvo m
@@ -27,6 +28,19 @@ def coords_to_distance_w_pyttis(latitude1, longitude1, latitude2, longitude2):
     y = lat_diff_r
     
     return R * np.sqrt(x*x + y*y)
+
+
+def from_acceleration_to_duration_and_speed(accelerations, checkpoint_interval, initial_speed=0):
+    speeds = [initial_speed]
+    time_intervals = [0]
+    for i, accel in enumerate(accelerations[1:]):
+        if accel == 0:
+            t = checkpoint_interval / speeds[i]
+        else:
+            t = (np.sqrt(speeds[i] * speeds[i] + 2 * accel * checkpoint_interval) - speeds[i]) / accel
+        time_intervals.append(t)
+        speeds.append(accel * t + speeds[i])
+    return time_intervals, speeds
 
 
 # nopeus km/h, duration s, palautusarvo m
@@ -68,61 +82,6 @@ def get_acceleration(speeds, durations):
     time_diff = durations.diff(1).to_numpy()[1:]
     accel[1:] = speed_diff / time_diff / 3.6
     return accel
-
-
-# piirretään kuvaajia
-def draw_distance_graphs(df):
-    train_num = df['trainNumber'].unique()[0]
-    date = df["departureDate"].unique()[0]
-    fig1 = plt.figure(figsize=(14, 6))
-    ax1 = fig1.add_subplot(121)
-    ax1.plot(df["duration"] / 3600, df["dist_from_coords"] / 1000)
-    ax1.plot(df["duration"] / 3600, df["dist_from_speed"] / 1000)
-    # df.plot("duration", "dist_from_coords", ax=ax1)
-    # df.plot("duration", "dist_from_speed", ax=ax1)
-    ax1.legend(["based on coords", "based on speed"])
-    ax1.grid()
-    ax1.set_title(f"Distance travelled by train {train_num} on {date}")
-    ax1.set_ylabel("distance ($km$)")
-    ax1.set_xlabel("duration ($h$)")
-    # plt.show()
-
-    ax2 = fig1.add_subplot(122)
-    ax2.plot(df["duration"] / 3600, (df["dist_from_speed"] - df["dist_from_coords"]) / 1000)
-    ax2.set_title(f"Difference of distances based on speed and coordinates (train {train_num}, date {date})")
-    # ax2.set_ylabel("difference ($m$)")
-    ax2.set_xlabel("duration ($h$)")
-    ax2.grid()
-    plt.show()
-
-
-def draw_acceleration_graphs(df, graph_type="scatter"):
-    train_num = df['trainNumber'].unique()[0]
-    date = df["departureDate"].unique()[0]
-    fig = plt.figure(figsize=(14, 6))
-    fig.suptitle(f"Acceleration of train {train_num} on {date}")
-    ax1 = fig.add_subplot(121)
-    if graph_type == "scatter":
-        ax1.scatter(df["duration"] / 3500, df["acceleration"], s=2)
-    elif graph_type == "plot":
-        ax1.plot(df["duration"] / 3500, df["acceleration"])
-    ax1.set_xlabel("duration ($h$)")
-    ax1.set_ylabel("acceleration ($m/s^2$)")
-    ax1.set_ylim(-2, 2)
-    ax1.grid()
-    # plt.show()
-
-    ax2 = fig.add_subplot(122)
-    if graph_type == "scatter":
-        ax2.scatter(df["dist_from_speed"] / 1000, df["acceleration"], s=2)
-    elif graph_type == "plot":
-        ax2.plot(df["dist_from_speed"] / 1000, df["acceleration"])
-    # plt.title(f"Acceleration of train {train_num} on {date}")
-    ax2.set_xlabel("distance travelled ($km$)")
-    # ax2.set_ylabel("acceleration ($m/s^2$)")
-    ax2.set_ylim(-2, 2)
-    ax2.grid()
-    plt.show()
 
 
 # numeroidaan pysähdykset, oletusarvojen ovelaa käyttöä toivottavasti...
@@ -221,7 +180,7 @@ def get_train_location_data_from_api(train_num, date):
 
 
 # get EVERYTHING
-def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=False):
+def get_train_location_data(train_num, date, with_graphs=False, with_all_graphs=False):
     df = get_train_location_data_from_api(train_num, date)
     if df is None:
         print(f"Data not found: {train_num=}, {date=}")
@@ -294,10 +253,10 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
     df["station"] = df.apply(lambda r: get_station(r["stops_from_speed"], stations), axis=1)
 
     # pari kuvaajaa
-    if with_all_graphs:
-        draw_distance_graphs(df)
+    # if with_all_graphs:
+    #     draw_distance_graphs(df)
 
-    # kiihtyvyyskuvaajia
+    # # kiihtyvyyskuvaajia
     if with_graphs:
         print(f"Distance travelled by train {train_num} on {date}")
         print(f"Total distance travelled (based on speed): \t\t{round(df['dist_from_speed'].max() / 1000, 3)} km")
@@ -309,8 +268,8 @@ def get_train_location_data(train_num, date, with_graphs=True, with_all_graphs=F
         print(f"Stops at stations ({len(stop_stations)}): {stop_stations}")
         print()
 
-        draw_acceleration_graphs(df)  
-        print()
+    #     draw_acceleration_graphs(df)  
+    #     print()
 
     return df
 
@@ -354,9 +313,17 @@ def get_location_data_for_trains(trains_and_dates, start_station=None, end_stati
     return df
 
 
-def get_distances_from_df(df):
+def get_durations_from_df(df):
     groups = df.groupby(["trainNumber", "departureDate"])
-    dist_from_coords = groups["dist_from_coords"].max() - groups["dist_from_coords"].min()
+    return groups["duration"].max() - groups["duration"].min()
+
+
+def get_distances_from_df(df, with_coords=False):
+    groups = df.groupby(["trainNumber", "departureDate"])
+    if with_coords:
+        dist_from_coords = groups["dist_from_coords"].max() - groups["dist_from_coords"].min()
+    else:
+        dist_from_coords = None
     dist_from_speed = groups["dist_from_speed"].max() - groups["dist_from_speed"].min()
     result = pd.concat([dist_from_speed, dist_from_coords], axis=1)
     return result.reset_index()
@@ -468,22 +435,3 @@ def test_clusters_with_rfc(df, df_clusters, test_size=0.2, rng=None):
 
     return rfc
 
-
-# clusters muotoa km.predict()
-def draw_kmeans_centroids(kmeans, checkpoints, clusters, max_plots=5):
-    fig, ax = plt.subplots(figsize=(14, 5))
-    c = clusters.value_counts().reset_index().rename({"index": "cluster_id", "cluster_id": "count"}, axis=1)
-    # decrease = 0
-    for i in range(max_plots):
-        label_text = f"{c.loc[i, 'cluster_id']}: {c.loc[i, 'count']}"
-        ax.plot(checkpoints / 1000, kmeans.cluster_centers_[c.loc[i, "cluster_id"], :], alpha=0.5, label=label_text)
-        # ax.plot(checkpoints / 1000, kmeans.cluster_centers_[c.loc[i, "cluster_id"], :], alpha=0.8 - 0.4 * np.sqrt(decrease))
-        # decrease += 1
-    
-    ax.set_title("Acceleration cluster centroids")
-    ax.set_ylabel("acceleration ($m/s^2$)")
-    ax.set_xlabel("distance ($km$)")
-    ax.set_ylim(-0.5, 0.5)
-    ax.legend(c["count"].head(max_plots))
-    ax.grid()
-    plt.show()
