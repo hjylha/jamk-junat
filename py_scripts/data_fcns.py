@@ -353,7 +353,7 @@ def accel_dict(num, date, dist, accel=None):
 
 
 # keskitytään olennaiseen ja lisätään checkpointit
-def get_essential_df(big_df, best_dist_estimate, trains, checkpoint_interval=100):
+def get_essential_df(big_df, best_dist_estimate, checkpoint_interval=100):
     df = big_df.loc[:, ["trainNumber", "departureDate", "dist_from_speed", "acceleration"]].copy()
     df.reset_index(drop=True, inplace=True)
 
@@ -365,7 +365,7 @@ def get_essential_df(big_df, best_dist_estimate, trains, checkpoint_interval=100
     # lisätään checkpointit
     checkpoints = np.arange(0, best_dist_estimate + 1, checkpoint_interval)
     additions = []
-    for train_num, date in trains:
+    for train_num, date in max_d.index:
         for d in checkpoints[1:-1]:
             additions.append(accel_dict(train_num, date, d))
     df = pd.concat([df, pd.DataFrame(additions)])
