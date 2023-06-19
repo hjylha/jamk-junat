@@ -283,6 +283,8 @@ def get_location_data_for_trains(trains_and_dates, start_station=None, end_stati
     df = pd.DataFrame()
     for num, date in trains_and_dates:
         try:
+            # varmistetaan, että num on int
+            num = int(num)
             new_df = get_train_location_data(num, date, False)
         except KeyError as e:
             print(f"{type(e).__name__}: {e} [{date=}, {num=}]")
@@ -385,7 +387,8 @@ def get_cluster_df(df, col_name="acceleration"):
 def run_kmeans(df_to_cluster, k, rng=None):
     km = KMeans(n_clusters=k, n_init="auto", random_state=rng)
     km.fit(df_to_cluster)
-    cluster_ids = km.predict(df_to_cluster)
+    # cluster_ids = km.predict(df_to_cluster)
+    cluster_ids = km.labels_
     return [km, cluster_ids]
 
 
