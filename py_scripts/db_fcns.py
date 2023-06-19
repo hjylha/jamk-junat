@@ -7,11 +7,14 @@ import pandas as pd
 THIS_FILE_PATH = Path(__file__)
 # "data/db.db"
 DB_PATH = THIS_FILE_PATH.parent.parent / "data" / "db.db"
-
+if not DB_PATH.parent.exists():
+    DB_PATH.parent.mkdir()
 
 try:
     from .extra_data_paths import get_extra_train_data_path
     EXTRA_DB_PATH = get_extra_train_data_path() / "juna.db"
+    if not EXTRA_DB_PATH.parent.exists():
+        EXTRA_DB_PATH.parent.mkdir()
 except ModuleNotFoundError:
     print("No path for extra data found, using regular one instead.")
     EXTRA_DB_PATH = DB_PATH
