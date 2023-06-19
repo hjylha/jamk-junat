@@ -4,6 +4,8 @@ Toistaiseksi tässä on muutama notebook:
 
 * [klusterointia.ipynb](klusterointia.ipynb) tarkastelee Jämsä-Orivesi-välin junavuoroja ja yrittää klusteroida niitä kiihtyvyyksien perusteella
 
+* notebookissa [datahaku.ipynb](datahaku.ipynb) kerätään analysoitavaksi halutut junavuorot asemavälin ja päivämäärän perusteella
+
 * [juna_digitraffic.ipynb](juna_digitraffic.ipynb) tutkailee digitraffic.fi:n [rautatieliikenteeseen liittyviä rajapintoja](https://www.digitraffic.fi/rautatieliikenne/)
 
 * notebookissa [kokeile_skripteja.ipynb](kokeile_skripteja.ipynb) voi kokeilla datan keräämiseen ja käsittelyyn tarkoitettuja skriptejä
