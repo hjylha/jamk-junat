@@ -66,7 +66,7 @@ def draw_graphs(durations, distances, y, y_name, train_num, date, y_limits=(-1, 
     # plt.title(f"Acceleration of train {train_num} on {date}")
     ax2.set_xlabel("distance travelled ($km$)")
     # ax2.set_ylabel("acceleration ($m/s^2$)")
-    ax2.set_ylim(*y_limits)
+    ax2.set_ylim(y_limits)
     ax2.grid()
     plt.show()
 
@@ -122,7 +122,7 @@ def draw_graph(distances, y, y_name, train_num, date, y_limits=None, graph_type=
     ax.set_ylabel(ylabel)
     ax.set_xlabel("distance ($km$)")
     if y_limits is not None:
-        ax.set_ylim(*y_limits)
+        ax.set_ylim(y_limits)
     ax.grid()
     plt.show()
 
@@ -139,6 +139,31 @@ def draw_acceleration_graph(df, graph_type="plot", limit=None):
     limits = (-limit, limit) if limit is not None else None
     draw_graph(df["dist_from_speed"], df["acceleration"], "acceleration", train_num, date, limits, graph_type)
 
+
+# tämän voi tehdä paremmin
+def draw_many_graphs(y_name, *dfs, y_limits=None, graph_type="plot"):
+    title = f"{y_name} of some trains"
+    fig, ax = plt.subplots(figsize=(14, 5))
+    if graph_type == "plot":
+        for df in dfs:
+            df_label = f"{df['departureDate']: {df['trainNumber']}}"
+            ax.plot(df["dist_from_speed"] / 1000, y, alpha=0.5, label=df_label)
+    if graph_type == "scatter":
+        for df in dfs:
+            df_label = f"{df['departureDate']: {df['trainNumber']}}"
+            ax.scatter(df["dist_from_speed"] / 1000, y, s=2, label=df_label)
+    ax.set_title(title)
+    ax.legend()
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel("distance ($km$)")
+    if y_limits is not None:
+        ax.set_ylim(y_limits)
+    ax.grid()
+    plt.show()
+
+
+# def draw_many_speed_graphs(*dfs):
+#     pass
 
 # clusters muotoa km.predict()
 def draw_kmeans_centroids(kmeans, checkpoints, clusters, max_plots=5, limit=0.5):
