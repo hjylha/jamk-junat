@@ -30,14 +30,36 @@ def coords_to_distance_w_pyttis(latitude1, longitude1, latitude2, longitude2):
     return R * np.sqrt(x*x + y*y)
 
 
+def time_at_checkpoint(checkpoint, time_b, time_a, dist_b, speed_b, speed_a):
+    if speed_a == speed_b:
+        return time_b + (checkpoint - dist_b) / speed_b
+    accel = (speed_a - speed_b) / (time_a - time_b)
+    return time_b - speed_b / accel + np.sqrt(speed_b**2 + 2 * accel * (checkpoint - dist_b)) / np.abs(accel)
+
+
+def get_next_time_segment(acceleration, prev_speed, distance_diff):
+    if acceleration == 0:
+        return distance_diff / prev_speed
+    in_sqrt = prev_speed**2 + 2 * acceleration * distance_diff
+    if in_sqrt < 0:
+        return - prev_speed / acceleration
+    return (np.sqrt(in_sqrt) - prev_speed) / acceleration
+
+
 def from_acceleration_to_duration_and_speed(accelerations, checkpoint_interval, initial_speed=0):
     speeds = [initial_speed]
     time_intervals = [0]
     for i, accel in enumerate(accelerations[1:]):
-        if accel == 0:
-            t = checkpoint_interval / speeds[i]
-        else:
-            t = (np.sqrt(speeds[i] * speeds[i] + 2 * accel * checkpoint_interval) - speeds[i]) / accel
+        t = get_next_time_segment(accel, speeds[i], checkpoint_interval)
+        # if accel == 0:
+        #     t = checkpoint_interval / speeds[i]
+        # else:
+        #     in_sqrt = speeds[i] * speeds[i] + 2 * accel * checkpoint_interval
+        #     if in_sqrt < 0:
+        #         print(f"Matka loppuu kesken, indeksi {i}")
+        #         t = -speeds[i] / accel
+        #     else:
+        #         t = (np.sqrt(in_sqrt) - speeds[i]) / accel
         time_intervals.append(t)
         speeds.append(accel * t + speeds[i])
     return time_intervals, speeds
@@ -61,6 +83,16 @@ def from_speed_to_distance(speeds, durations):
 #     distances[1:] = (speeds[:-1] * time_diff + 0.5 * speeds.diff(1).to_numpy()[1:] * time_diff) / 3.6
 #     # distances[1:] = speeds[:-1] * time_diff / 3.6 + 0.5 * accels.to_numpy()[1:] * time_diff * time_diff
 #     return distances
+
+
+def suspicious_zero_speeds_found(df, speed_limit=50):
+    zeros = df[df["speed"] == 0].index
+    # if not zeros[1:-1].empty:
+    #     print(df["trainNumber"][0], df["departureDate"][0])
+    for i in zeros[1:-1]:
+        if min(df.loc[i-1, "speed"], df.loc[i+1, "speed"]) > speed_limit:
+            return True
+    return False
 
 
 # arvioidaan nopeutta koordinaattien muutosten perusteella
@@ -328,6 +360,7 @@ def get_distances_from_df(df, with_coords=False):
         dist_from_coords = None
     dist_from_speed = groups["dist_from_speed"].max() - groups["dist_from_speed"].min()
     result = pd.concat([dist_from_speed, dist_from_coords], axis=1)
+    result["duration"] = get_durations_from_df(df)
     return result.reset_index()
 
 
