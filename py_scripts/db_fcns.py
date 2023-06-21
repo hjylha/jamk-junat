@@ -16,7 +16,7 @@ try:
     if not EXTRA_DB_PATH.parent.exists():
         EXTRA_DB_PATH.parent.mkdir()
 except ModuleNotFoundError:
-    print("No path for extra data found, using regular one instead.")
+    print(f"No path for extra data found, using regular one instead ({DB_PATH}).")
     EXTRA_DB_PATH = DB_PATH
 
 
