@@ -171,7 +171,7 @@ def draw_kmeans_centroids(kmeans, checkpoints, clusters, max_plots=5, limit=0.5)
     max_plots = min(kmeans.cluster_centers_.shape[0], max_plots)
 
     fig, ax = plt.subplots(figsize=(14, 5))
-    c = clusters.value_counts().reset_index().rename({"cluster_id": "count", "index": "cluster_id"}, axis=1)
+    c = clusters.value_counts().reset_index().rename(columns={"cluster_id": "count", "index": "cluster_id"})
     # decrease = 0
     for i in range(max_plots):
         label_text = f"{c.loc[i, 'cluster_id']}: {c.loc[i, 'count']}"
