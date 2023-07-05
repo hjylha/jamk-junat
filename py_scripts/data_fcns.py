@@ -30,11 +30,67 @@ def coords_to_distance_w_pyttis(latitude1, longitude1, latitude2, longitude2):
     return R * np.sqrt(x*x + y*y)
 
 
+def kinda_alternating_sum(series, curr_index):
+    if curr_index == 0:
+        return series[0]
+    # if not isinstance(curr_index, int):
+    #     raise Exception(f"Error: {curr_index} is not of type int")
+    return series[curr_index::-2].sum() - series[curr_index-1::-2].sum()
+
+
+# erityisen herkkä virheille
+def get_speed(df):
+    # speeds = np.zeros(len(df))
+    diff_quo = np.zeros(len(df))
+    diff_quo[1:] = (df["dist_from_speed"].diff(1) / df["duration"].diff(1))[1:].to_numpy()
+    speeds = df.reset_index().apply(lambda r: kinda_alternating_sum(diff_quo, r.name), axis=1)
+    return speeds * 7.2
+
+
 def time_at_checkpoint(checkpoint, time_b, time_a, dist_b, speed_b, speed_a):
-    if speed_a == speed_b:
+    if dist_b > checkpoint:
+        muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a)
+        print(f"{muuttujat=}")
+        raise Exception(f"Väärä etäisyyksien järjestys: {dist_b} > {checkpoint}")
+    speed_b = speed_b / 3.6
+    speed_a = speed_a / 3.6
+    if round(speed_a - speed_b, 3) == 0:
+        if speed_b == 0:
+            # print(f"ongelma: nollalla jako ({checkpoint=})")
+            muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a)
+            print(f"{muuttujat=}")
+            raise Exception(f"Nollalla jako")
+            return time_b
         return time_b + (checkpoint - dist_b) / speed_b
     accel = (speed_a - speed_b) / (time_a - time_b)
-    return time_b - speed_b / accel + np.sqrt(speed_b**2 + 2 * accel * (checkpoint - dist_b)) / np.abs(accel)
+    in_sqrt = speed_b**2 + 2 * accel * (checkpoint - dist_b)
+    if in_sqrt < 0:
+        print(f"ongelma: negatiivinen luku neliöjuuren sisässä ({checkpoint=})")
+        muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a)
+        print(f"{muuttujat=}")
+        raise Exception(f"Negatiivinen luku neliöjuuren sisässä")
+        in_sqrt = 0
+    result = np.round(time_b - speed_b / accel + np.sqrt(in_sqrt) / accel, 2)
+    if result < time_b:
+        muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a)
+        print(f"{muuttujat=}")
+        print(f"{result=}")
+        raise Exception(f"Aika kääntyy väärinpäin: keski ennen alkua")
+    if result > time_a:
+        muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a)
+        print(f"{muuttujat=}")
+        print(f"{result=}")
+        raise Exception(f"Aika kääntyy väärinpäin: keski lopun jälkeen")
+    return result
+
+
+def interpolate_time(row, df):
+    if not row.isna().any():
+        return row["duration"]
+    next_index = df[df["dist_from_speed"] > row["dist_from_speed"]].index.min()
+    prev_speed, prev_t, prev_dist = df.loc[next_index - 1, ["speed", "duration", "dist_from_speed"]]
+    next_speed, next_t = df.loc[next_index, ["speed", "duration"]]
+    return time_at_checkpoint(row["dist_from_speed"], prev_t, next_t, prev_dist, prev_speed, next_speed)
 
 
 def get_next_time_segment(acceleration, prev_speed, distance_diff):
@@ -91,6 +147,15 @@ def suspicious_zero_speeds_found(df, speed_limit=50):
     #     print(df["trainNumber"][0], df["departureDate"][0])
     for i in zeros[1:-1]:
         if min(df.loc[i-1, "speed"], df.loc[i+1, "speed"]) > speed_limit:
+            return True
+    return False
+
+
+def suspicious_speed_changes_found(df, speed_difference=50):
+    for i in df.index[1:-1]:
+        if min(df.loc[i-1, "speed"], df.loc[i+1, "speed"]) > df.loc[i, "speed"] + speed_difference:
+            return True
+        if max(df.loc[i-1, "speed"], df.loc[i+1, "speed"]) < df.loc[i, "speed"] - speed_difference:
             return True
     return False
 
