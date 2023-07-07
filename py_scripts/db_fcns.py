@@ -20,8 +20,9 @@ except ModuleNotFoundError:
     EXTRA_DB_PATH = DB_PATH
 
 
-def save_df_to_db(df, table_name, to_extra=False, if_exists_action="fail"):
-    db_path = EXTRA_DB_PATH if to_extra else DB_PATH
+def save_df_to_db(df, table_name, to_extra=False, if_exists_action="fail", db_path=None):
+    if db_path is None:
+        db_path = EXTRA_DB_PATH if to_extra else DB_PATH
     with sqlite3.connect(db_path) as conn:
         try:
             df.to_sql(name=table_name, con=conn, if_exists=if_exists_action, index=False)
@@ -31,8 +32,9 @@ def save_df_to_db(df, table_name, to_extra=False, if_exists_action="fail"):
 
 
 
-def get_df_from_db(table_name, from_extra=False):
-    db_path = EXTRA_DB_PATH if from_extra else DB_PATH
+def get_df_from_db(table_name, from_extra=False, db_path=None):
+    if db_path is None:
+        db_path = EXTRA_DB_PATH if from_extra else DB_PATH
     try:
         with sqlite3.connect(db_path) as conn:
             try:
