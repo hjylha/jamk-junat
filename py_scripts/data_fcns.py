@@ -181,6 +181,28 @@ def get_acceleration(speeds, durations):
     return accel
 
 
+def check_station_stops(train, start_station, end_station):
+    wanted_stations = []
+    found_station = False
+    for r in train["timeTableRows"]:
+        station = r["stationShortCode"]
+        stop_type = r["type"]
+        stops = r["trainStopping"]
+        # tarvitaanko lisää tarkastuksia?
+        # r["cancelled"]
+        # actual_time = r.get("actualTime")
+        if station == start_station and stop_type == "DEPARTURE" and stops:
+            found_station = True
+            wanted_stations.append(station)
+        if found_station and stop_type == "ARRIVAL" and stops:
+            wanted_stations.append(station)
+        if station == end_station and not found_station:
+            return
+        if station == end_station and found_station and stop_type == "ARRIVAL" and stops:
+            return tuple(wanted_stations)
+    return            
+
+
 # numeroidaan pysähdykset, oletusarvojen ovelaa käyttöä toivottavasti...
 def get_stops(row, identifier=None, col_name="speed", previous_stops={"previous": 0, "stop_count": 0, "identifier": None}):
     if identifier is not None and identifier != previous_stops["identifier"]:
