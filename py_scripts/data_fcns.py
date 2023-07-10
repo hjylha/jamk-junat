@@ -298,15 +298,14 @@ def get_train_location_data_from_api(train_num, date):
         return pd.DataFrame(locations)
 
 
-# get EVERYTHING
-def get_train_location_data(train_num, date, with_graphs=False, with_all_graphs=False):
+def get_raw_train_location_data(train_num, date):
     df = get_train_location_data_from_api(train_num, date)
     if df is None:
-        print(f"Data not found: {train_num=}, {date=}")
+        print(f"Data not found: {date=}, {train_num=}")
         return
     # aikamuodot kuntoon
     df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df["duration"] = (df["timestamp"] - df["timestamp"].min()).apply(lambda t: t.total_seconds())
+    # df["duration"] = (df["timestamp"] - df["timestamp"].min()).apply(lambda t: t.total_seconds())
 
     # koordinaatit talteen (ja vanhat pois)
     df["latitude"] = df["location"].apply(lambda d: d["coordinates"][1])
@@ -314,16 +313,20 @@ def get_train_location_data(train_num, date, with_graphs=False, with_all_graphs=
     df.drop("location", inplace=True, axis=1)
 
     # ei toisteta dataa
-    # df.drop_duplicates(inplace=True)
-    df.drop_duplicates("timestamp", inplace=True)
+    df.drop_duplicates(inplace=True)
+    # df.drop_duplicates("timestamp", inplace=True)
 
-    # toivottavasti näitäkään ei tarvita
+    # toivottavasti tarkkuutta ei tarvita
     if "accuracy" in df.columns:
         df.drop("accuracy", inplace=True, axis=1)
-    # df.drop(["trainNumber", "departureDate"], inplace=True, axis=1)
 
     # onko sorttaus paikallaan?
-    df = df.sort_values("duration").reset_index(drop=True)
+    return df.sort_values("timestamp").reset_index(drop=True)
+
+
+# get EVERYTHING
+def get_train_location_data(train_num, date, with_graphs=False, with_all_graphs=False):
+    df = get_raw_train_location_data(train_num, date)
 
     # vanhat koordinaatit
     prev_lat = [df.loc[0, "latitude"]]
