@@ -401,6 +401,10 @@ def get_locations_for_train(train_num, date, big_df):
     return big_df[(big_df["trainNumber"] == train_num) & (big_df["departureDate"] == date)]
 
 
+def select_data_for_train(date, train_num, big_df):
+    return big_df[(big_df["trainNumber"] == train_num) & (big_df["departureDate"] == date)]
+
+
 def get_location_data_for_trains(trains_and_dates, start_station=None, end_station=None, sleeptime=None):
     df = pd.DataFrame()
     for num, date in trains_and_dates:
