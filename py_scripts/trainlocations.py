@@ -161,7 +161,41 @@ class TrainLocations:
         self.location_df_raw.reset_index(drop=True, inplace=True)
         return self.location_df_raw
 
+
+    def limit_timetables(self):
+        new_timetables = pd.DataFrame()
+        for date, train_num in self.train_df.index:
+            tt = select_data_for_train(date, train_num, self.timetables)
+            start_index = tt[tt["stationShortCode"] == self.start_station].index.min()
+            end_index = tt[tt["stationShortCode"] == self.end_station].index.max()
+            new_timetables = pd.concat([new_timetables, tt.loc[start_index:end_index, :].copy()])
+        new_timetables.reset_index(drop=True, inplace=True)
+        self.timetables = new_timetables
+        return new_timetables
+
+    def limit_train_locations(self):
+        new_locations = pd.DataFrame()
+        for date, train_num in self.train_df[self.train_df["actualTime_exists"]].index:
+            # if not self.train_df.loc[(date, train_num), "actualTime_exists"]:
+            #     continue
+            loc_df = select_data_for_train(date, train_num, self.location_df_raw)
+            tt = select_data_for_train(date, train_num, self.timetables)
+            start_time = tt[tt["stationShortCode"] == self.start_station]["actualTime"].min() - pd.Timedelta(minutes=1)
+            end_time = tt[tt["stationShortCode"] == self.end_station]["actualTime"].max() + pd.Timedelta(minutes=1)
+
+            start_index = loc_df[(loc_df["speed"] == 0) & (loc_df["timestamp"] > start_time)].index.min()
+            end_index = loc_df[(loc_df["speed"] == 0) & (loc_df["timestamp"] < end_time)].index.max()
+
+            new_locations = pd.concat([new_locations, loc_df.loc[start_index:end_index, :].copy()])
+        
+        new_locations.reset_index(drop=True, inplace=True)
+        self.location_df_raw = new_locations
+        return new_locations
+
+
     def process_train_locations(self):
         self.location_df = pd.DataFrame()
-        # processing...
+        for date, train_num in self.train_df[self.train_df["actualTime_exists"]].index:
+            loc_df = select_data_for_train(date, train_num, self.location_df_raw)
+            # kaikenlaista prosessointia
         return self.location_df
