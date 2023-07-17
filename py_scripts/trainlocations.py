@@ -68,14 +68,14 @@ class TrainLocations:
         
         self.timetables = None
         self.location_df_raw = None
-        self.location_df = None
+        self.location_dfs = None
         self.train_df = None
         if "timetables" in kwargs:
             self.timetables = kwargs["timetables"]
         if "location_df_raw" in kwargs:
             self.location_df_raw = kwargs["location_df_raw"]
-        if "location_df" in kwargs:
-            self.location_df = kwargs["location_df"]
+        if "location_dfs" in kwargs:
+            self.location_dfs = kwargs["location_dfs"]
         if "train_df" in kwargs:
             self.train_df = kwargs["train_df"]
     
@@ -138,6 +138,7 @@ class TrainLocations:
         self.train_df = self.train_df.set_index(["departureDate", "trainNumber"])
         return self.train_df
 
+    # reitit lienee hyvä saada helposti
     def get_routes(self):
         return self.train_df["stations"].value_counts()
     
@@ -228,7 +229,7 @@ class TrainLocations:
     # vanha versio, ehkä päivitys luvassa...
     def process_train_locations(self, route):
         trains = self.train_df[(self.train_df["actualTime_exists"]) & (self.train_df["stations"] == route)]
-        self.location_df = [pd.DataFrame() for _ in range(len(route) - 1)]
+        self.location_dfs = [pd.DataFrame() for _ in range(len(route) - 1)]
 
         for date, train_num in trains.index:
             loc_df = select_data_for_train(date, train_num, self.location_df_raw).copy().reset_index(drop=True)
@@ -254,10 +255,10 @@ class TrainLocations:
                 # tarviiko aloittaa nollasta?
                 df_to_add["dist_from_speed"] = df_to_add["dist_from_speed"] - df_to_add["dist_from_speed"].min()
                 df_to_add["duration"] = df_to_add["duration"] - df_to_add["duration"].min()
-                self.location_df[i] = pd.concat([self.location_df[i], df_to_add])
+                self.location_dfs[i] = pd.concat([self.location_dfs[i], df_to_add])
 
             # self.location_df = pd.concat([self.location_df, loc_df])
 
         # self.location_df.reset_index(drop=True, inplace=True)
-        self.location_df = [loc_df.reset_index(drop=True) for loc_df in self.location_df]
-        return self.location_df
+        self.location_dfs = [loc_df.reset_index(drop=True) for loc_df in self.location_dfs]
+        return self.location_dfs
