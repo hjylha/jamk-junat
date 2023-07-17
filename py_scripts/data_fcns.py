@@ -327,6 +327,8 @@ def get_raw_train_location_data(train_num, date):
 # get EVERYTHING
 def get_train_location_data(train_num, date, with_graphs=False, with_all_graphs=False):
     df = get_raw_train_location_data(train_num, date)
+    if df is None:
+        return
 
     # vanhat koordinaatit
     prev_lat = [df.loc[0, "latitude"]]
