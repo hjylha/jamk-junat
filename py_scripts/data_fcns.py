@@ -338,6 +338,7 @@ def get_train_location_data(train_num, date, with_graphs=False, with_all_graphs=
     df["previous_longitude"] = prev_lon
 
     # kiihtyvyys kehiin
+    df["duration"] = (df["timestamp"] - df["timestamp"].min()).apply(lambda t: t.total_seconds())
     df["acceleration"] = get_acceleration(df["speed"], df["duration"])
     # df["acceleration+"] = df["acceleration"].apply(lambda a: max(a, 0))
 
