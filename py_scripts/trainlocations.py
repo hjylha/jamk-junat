@@ -8,6 +8,7 @@ import pandas as pd
 from .api_fcns import request_data
 from .db_fcns import save_df_to_db, get_df_from_db, EXTRA_DB_PATH
 from .data_fcns import check_station_stops, get_raw_train_location_data, select_data_for_train
+from .data_fcns import get_acceleration, from_speed_to_distance, get_stops
 
 
 def train_dict(date, train_num, train_type, train_category):
@@ -18,6 +19,34 @@ def train_dict(date, train_num, train_type, train_category):
         "trainCategory": train_category
     }
 
+
+def get_stop_times(timetable, extra_time=60):
+    tt = timetable[timetable["trainStopping"]]
+
+    station_stop_times = []
+    stations = tt["stationShortCode"].unique()
+    # num_of_stations = len(stations)
+    # for i, station in enumerate(stations):
+    for station in stations:
+        tt_s = tt[tt["stationShortCode"] == station]
+        time_arrival = tt_s["actualTime"].min() - pd.Timedelta(seconds=extra_time)
+        time_departure = tt_s["actualTime"].max() + pd.Timedelta(seconds=extra_time)
+        station_stop_times.append({
+            "stationShortCode": station,
+            "arrival_time": time_arrival,
+            "departure_time": time_departure
+        })
+    return pd.DataFrame(station_stop_times)
+
+
+# sama nimi kuin data_fcns-funktiolla
+def get_station(row, station_stop_times):
+    if row["speed"] > 0:
+        return
+    sst = station_stop_times[(station_stop_times["arrival_time"] <= row["timestamp"]) & (station_stop_times["departure_time"] >= row["timestamp"])]
+    if sst.empty:
+        return
+    return sst["stationShortCode"].unique()[0]
 
 
 @dataclass
@@ -109,6 +138,10 @@ class TrainLocations:
         self.train_df = self.train_df.set_index(["departureDate", "trainNumber"])
         return self.train_df
 
+    def get_routes(self):
+        return self.train_df["stations"].value_counts()
+    
+
     def find_timetables(self, wait_time=0.5):
         self.timetables = pd.DataFrame()
         for date, train_num in self.train_df.index:
@@ -192,10 +225,39 @@ class TrainLocations:
         self.location_df_raw = new_locations
         return new_locations
 
+    # vanha versio, ehkä päivitys luvassa...
+    def process_train_locations(self, route):
+        trains = self.train_df[(self.train_df["actualTime_exists"]) & (self.train_df["stations"] == route)]
+        self.location_df = [pd.DataFrame() for _ in range(len(route) - 1)]
 
-    def process_train_locations(self):
-        self.location_df = pd.DataFrame()
-        for date, train_num in self.train_df[self.train_df["actualTime_exists"]].index:
-            loc_df = select_data_for_train(date, train_num, self.location_df_raw)
-            # kaikenlaista prosessointia
+        for date, train_num in trains.index:
+            loc_df = select_data_for_train(date, train_num, self.location_df_raw).copy().reset_index(drop=True)
+
+            loc_df["duration"] = (loc_df["timestamp"] - loc_df["timestamp"].min()).apply(lambda t: t.total_seconds())
+            loc_df["acceleration"] = get_acceleration(loc_df["speed"], loc_df["duration"])
+            loc_df["dist_from_speed"] = from_speed_to_distance(loc_df["speed"], loc_df["duration"]).cumsum()
+
+            loc_df["stops"] = loc_df.apply(lambda r: get_stops(r, id(loc_df["speed"]), "speed"), axis=1)
+            station_stop_times = get_stop_times(select_data_for_train(date, train_num, self.timetables))
+            loc_df["station"] = loc_df.apply(lambda r: get_station(r, station_stop_times), axis=1)
+
+            for i in range(len(route) - 1):
+                station1 = route[i]
+                station2 = route[i + 1]
+                index1 = loc_df[loc_df["station"] == station1].index.max()
+                index2 = loc_df[loc_df["station"] == station2].index.min()
+                df_to_add = loc_df.loc[index1:index2, :].copy()
+
+                # kenties on parempi olla jotain asemien välillä
+                df_to_add["station"] = df_to_add["station"].fillna(f"{station1}-{station2}")
+
+                # tarviiko aloittaa nollasta?
+                df_to_add["dist_from_speed"] = df_to_add["dist_from_speed"] - df_to_add["dist_from_speed"].min()
+                df_to_add["duration"] = df_to_add["duration"] - df_to_add["duration"].min()
+                self.location_df[i] = pd.concat([self.location_df[i], df_to_add])
+
+            # self.location_df = pd.concat([self.location_df, loc_df])
+
+        # self.location_df.reset_index(drop=True, inplace=True)
+        self.location_df = [loc_df.reset_index(drop=True) for loc_df in self.location_df]
         return self.location_df
