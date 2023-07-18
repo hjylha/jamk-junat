@@ -48,6 +48,8 @@ def get_df_from_db(table_name, from_extra=False, db_path=None):
 
     if "timestamp" in df.columns:
         df["timestamp"] = pd.to_datetime(df["timestamp"])
+    if "actualTime" in df.columns:
+        df["actualTime"] = pd.to_datetime(df["actualTime"])
     return df
 
 
