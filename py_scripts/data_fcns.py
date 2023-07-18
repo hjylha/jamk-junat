@@ -461,11 +461,11 @@ def get_distances_from_df(df, with_coords=False):
     return result.reset_index()
 
 
-def scale_distance(row, ref_df, best_dist_estimate):
+def scale_distance(row, ref_df, best_dist_estimate, col_name="dist_from_speed"):
     # max_dist = df[(df["trainNumber"] == row["trainNumber"]) & (df["departureDate"] == row["departureDate"])]["dist_from_speed"].max()
     # max_dist = ref_df.loc[(row["trainNumber"], row["departureDate"]), "dist_from_speed"]
     max_dist = ref_df.loc[(row["trainNumber"], row["departureDate"])]
-    return row["dist_from_speed"] / max_dist * best_dist_estimate 
+    return row[col_name] / max_dist * best_dist_estimate 
 
 
 # varmistetaan, että yllä max_dist palauttaa best_dist_estimaten
