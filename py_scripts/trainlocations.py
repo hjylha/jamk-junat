@@ -8,7 +8,7 @@ import pandas as pd
 from .api_fcns import request_data
 from .db_fcns import save_df_to_db, get_df_from_db, EXTRA_DB_PATH
 from .data_fcns import check_station_stops, get_raw_train_location_data, select_data_for_train
-from .data_fcns import get_acceleration, from_speed_to_distance, get_stops, scale_distance
+from .data_fcns import get_acceleration, from_speed_to_distance, get_stops
 
 
 def train_dict(date, train_num, train_type, train_category):
@@ -19,9 +19,18 @@ def train_dict(date, train_num, train_type, train_category):
         "trainCategory": train_category
     }
 
+def addition_dict(date, train_num, distance, duration, speed):
+    return {
+        "departureDate": date,
+        "trainNumber": train_num,
+        "dist_from_speed": distance,
+        "duration": duration,
+        "speed": speed
+    }
+
 
 def get_stop_times(timetable, extra_time=60):
-    tt = timetable[timetable["trainStopping"]]
+    tt = timetable[timetable["trainStopping"] == True]
 
     station_stop_times = []
     stations = tt["stationShortCode"].unique()
@@ -48,6 +57,12 @@ def get_station(row, station_stop_times):
         return
     return sst["stationShortCode"].unique()[0]
 
+# sama nimi kuin data_fcns-funktiolla
+def scale_distance(row, ref_df, best_dist_estimate, col_name="dist_from_speed"):
+    # max_dist = df[(df["trainNumber"] == row["trainNumber"]) & (df["departureDate"] == row["departureDate"])]["dist_from_speed"].max()
+    # max_dist = ref_df.loc[(row["trainNumber"], row["departureDate"]), "dist_from_speed"]
+    max_dist = ref_df.loc[(row["departureDate"], row["trainNumber"])]
+    return row[col_name] / max_dist * best_dist_estimate 
 
 @dataclass
 class StationsAndDates:
@@ -64,6 +79,7 @@ class IntervalDfs:
     distance: int
     trains: pd.DataFrame
     location_df: pd.DataFrame
+    checkpoints: np.ndarray
 
 
 class TrainLocations:
@@ -236,29 +252,64 @@ class TrainLocations:
         self.location_df_raw = new_locations
         return new_locations
 
-    # vanha versio, ehkä päivitys luvassa...
+
+    def save_raw_data_to_db(self, db_path=None):
+        if db_path:
+            self.db_path = db_path
+        
+        # helpot tallennukset
+        save_df_to_db(self.timetables, "timetables", db_path=self.db_path)
+        save_df_to_db(self.location_df_raw, "locations_raw", db_path=self.db_path)
+
+        # index ja stations pitää ottaa huomioon
+        trains_to_db = self.train_df.reset_index().copy()
+        trains_to_db["stations"] = trains_to_db["stations"].apply(lambda t: ",".join(t))
+        save_df_to_db(trains_to_db, "trains", db_path=self.db_path)
+
+
+    def load_raw_data_from_db(self, db_path):
+        if db_path:
+            self.db_path = db_path
+        self.timetables = get_df_from_db("timetables", db_path=self.db_path)
+        self.location_df_raw = get_df_from_db("locations_raw", db_path=self.db_path)
+        # junat vaativat lisähuomiota
+        trains_loading = get_df_from_db("trains", db_path=self.db_path)
+        trains_loading["stations"] = trains_loading["stations"].apply(lambda s: tuple(s.split(",")))
+        self.train_df = trains_loading.set_index(["departureDate", "trainNumber"])
+
+
+    # jaetaan matka (ja data) osiin reitin perusteella
     def process_train_locations(self, route):
-        trains = self.train_df[(self.train_df["locations_exist"]) & (self.train_df["stations"] == route)]
+        trains = self.train_df[(self.train_df["locations_exist"] == True) & (self.train_df["stations"] == route)]
         # self.location_dfs = [pd.DataFrame() for _ in range(len(route) - 1)]
 
         trains_df_for_intervals = trains.drop(["cancelled", "stations", "actualTime_exists", "locations_exist"], axis=1)
         trains_df_for_intervals["dist_from_speed"] = None
         trains_df_for_intervals["duration"] = None
+        trains_df_for_intervals["num_of_stops"] = None
+        trains_df_for_intervals["in_analysis"] = True
         self.interval_dfs = []
         for i, station in enumerate(route[:-1]):
             station2 = route[i + 1]
-            self.interval_dfs.append(IntervalDfs(station, station2, None, trains_df_for_intervals, pd.DataFrame()))
+            self.interval_dfs.append(IntervalDfs(station, station2, None, trains_df_for_intervals.copy(), pd.DataFrame(), None))
 
         for date, train_num in trains.index:
             loc_df = select_data_for_train(date, train_num, self.location_df_raw).copy().reset_index(drop=True)
+            if loc_df.empty:
+                print(f"emptyness: {date=}, {train_num=}")
+                continue
 
             loc_df["duration"] = (loc_df["timestamp"] - loc_df["timestamp"].min()).apply(lambda t: t.total_seconds())
-            loc_df["acceleration"] = get_acceleration(loc_df["speed"], loc_df["duration"])
+            # tarvitaanko kiihtyvyyyttä vielä?
+            # loc_df["acceleration"] = get_acceleration(loc_df["speed"], loc_df["duration"])
             loc_df["dist_from_speed"] = from_speed_to_distance(loc_df["speed"], loc_df["duration"]).cumsum()
 
             loc_df["stops"] = loc_df.apply(lambda r: get_stops(r, id(loc_df["speed"]), "speed"), axis=1)
             station_stop_times = get_stop_times(select_data_for_train(date, train_num, self.timetables))
             loc_df["station"] = loc_df.apply(lambda r: get_station(r, station_stop_times), axis=1)
+
+            # poistetaanko?
+            loc_df.drop(["timestamp", "latitude", "longitude"], axis=1, inplace=True)
 
             for i, station in enumerate(route[:-1]):
                 # station1 = route[i]
@@ -267,18 +318,25 @@ class TrainLocations:
                 index2 = loc_df[loc_df["station"] == station2].index.min()
                 df_to_add = loc_df.loc[index1:index2, :].copy()
 
+                if df_to_add.empty:
+                    # raise Exception(f"emptyness: {date=}, {train_num=}, stations={loc_df['station'].dropna().unique()}")
+                    self.interval_dfs[i].trains.loc[(date, train_num), "in_analysis"] = False
+                    continue
+
                 # kenties on parempi olla jotain asemien välillä
-                df_to_add["station"] = df_to_add["station"].fillna(f"{station1}-{station2}")
+                df_to_add["station"] = df_to_add["station"].fillna(f"{station}-{station2}")
 
                 # tarviiko aloittaa nollasta?
                 df_to_add["dist_from_speed"] = df_to_add["dist_from_speed"] - df_to_add["dist_from_speed"].min()
                 df_to_add["duration"] = df_to_add["duration"] - df_to_add["duration"].min()
 
-                self.interval_dfs[i].location_df = pd.concat([self.interval_dfs[i].location_df, df_to_add])
-                # self.location_dfs[i] = pd.concat([self.location_dfs[i], df_to_add])
-
                 self.interval_dfs[i].trains.loc[(date, train_num), "dist_from_speed"] = df_to_add["dist_from_speed"].max()
                 self.interval_dfs[i].trains.loc[(date, train_num), "duration"] = df_to_add["duration"].max()
+                self.interval_dfs[i].trains.loc[(date, train_num), "num_of_stops"] = df_to_add["stops"].iloc[-1] - df_to_add["stops"].iloc[0]
+
+                df_to_add.drop(["stops", "station"], axis=1, inplace=True)
+                self.interval_dfs[i].location_df = pd.concat([self.interval_dfs[i].location_df, df_to_add])
+                # self.location_dfs[i] = pd.concat([self.location_dfs[i], df_to_add])
 
                 # self.train_dfs[i].loc[(date, train_num), "dist_from_speed"] = df_to_add["dist_from_speed"].max()
                 # self.train_dfs[i].loc[(date, train_num), "duration"] = df_to_add["duration"].max()
@@ -299,6 +357,7 @@ class TrainLocations:
         if method == "mean":
             for data in self.interval_dfs:
                 data.distance = round(data.trains["dist_from_speed"].mean(), -2)
+        raise Exception(f"Method not supported: {method}")
 
 
     def filter_data_based_on_distance(self, percentage=1):
@@ -306,20 +365,45 @@ class TrainLocations:
             raise Exception(f"nonsensical percentage: {percentage}")
         upper_multiplier = 1 + percentage / 100
         lower_multiplier = 1 - percentage / 100
+
+        def filtering_fcn(row, lower_bound, upper_bound):
+            if not row["in_analysis"]:
+                return False
+            return row["dist_from_speed"] >= lower_bound and row["dist_from_speed"] <= upper_bound
+
         for data in self.interval_dfs:
             lower_bound = lower_multiplier * data.distance
             upper_bound = upper_multiplier * data.distance
-            data.trains["in_analysis"] = data.trains["dist_from_speed"].apply(lambda d: d >= lower_bound and d <= upper_bound)
+            # data.trains["in_analysis"] = data.trains["dist_from_speed"].apply(lambda d: d >= lower_bound and d <= upper_bound)
+            data.trains["in_analysis"] = data.trains.apply(lambda r: filtering_fcn(r, lower_bound, upper_bound), axis=1)
+            data.location_df["in_analysis"] = data.location_df.apply(lambda r: data.trains.loc[(r["departureDate"], r["trainNumber"]), "in_analysis"], axis=1)
+            data.location_df = data.location_df[data.location_df["in_analysis"]].drop("in_analysis", axis=1).reset_index(drop=True)
+        return self.interval_dfs
 
 
     def scale_distances(self):
         for data in self.interval_dfs:
             dist_reference = data.trains["dist_from_speed"]
             data.location_df["dist_from_speed"] = data.location_df.apply(lambda r: scale_distance(r, dist_reference, data.distance), axis=1)
+            # entä nopeus?
+            # data.location_df["speed"] = data.location_df.apply(lambda r: scale_distance(r, dist_reference, data.distance, "speed"), axis=1)
 
 
     def insert_checkpoints(self, checkpoint_interval=100):
-        pass
+
+        for data in self.interval_dfs:
+            data.checkpoints = np.arange(0, data.distance + 1, checkpoint_interval)
+            additions_template = pd.DataFrame([addition_dict(None, None, checkpoint, None, None) for checkpoint in data.checkpoints[1:-1]])
+            for date, train_num in data.trains[data.trains["in_analysis"] == True]:
+                additions = additions_template.copy()
+                additions["departureDate"] = date
+                additions["trainNumber"] = train_num
+                data.location_df = pd.concat([data.location_df, additions])
+            data.location_df.reset_index(drop=True, inplace=True)
+            data.location_df.drop_duplicates(["departureDate", "trainNumber", "dist_from_speed"])
+            data.location_df = data.location_df.sort_values(["departureDate", "trainNumber", "dist_from_speed"])
+
+
 
     def interpolate_checkpoints(self):
         pass
