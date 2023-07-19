@@ -47,17 +47,20 @@ def get_speed(df):
     return speeds * 7.2
 
 
-def time_at_checkpoint(checkpoint, time_b, time_a, dist_b, speed_b, speed_a):
+def time_at_checkpoint(checkpoint, time_b, time_a, dist_b, speed_b, speed_a, speed_unit="km/h"):
     if dist_b > checkpoint:
         muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a)
         print(f"{muuttujat=}")
         raise Exception(f"Väärä etäisyyksien järjestys: {dist_b} > {checkpoint}")
-    speed_b = speed_b / 3.6
-    speed_a = speed_a / 3.6
+    if speed_unit not in ["km/h", "m/s"]:
+        raise Exception(f"Väärä nopeuden yksikkö: {speed_unit}")
+    if speed_unit == "km/h":
+        speed_b = speed_b / 3.6
+        speed_a = speed_a / 3.6
     if round(speed_a - speed_b, 3) == 0:
         if speed_b == 0:
             # print(f"ongelma: nollalla jako ({checkpoint=})")
-            muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a)
+            muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a, speed_unit)
             print(f"{muuttujat=}")
             raise Exception(f"Nollalla jako")
             return time_b
@@ -66,31 +69,31 @@ def time_at_checkpoint(checkpoint, time_b, time_a, dist_b, speed_b, speed_a):
     in_sqrt = speed_b**2 + 2 * accel * (checkpoint - dist_b)
     if in_sqrt < 0:
         print(f"ongelma: negatiivinen luku neliöjuuren sisässä ({checkpoint=})")
-        muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a)
+        muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a, speed_unit)
         print(f"{muuttujat=}")
         raise Exception(f"Negatiivinen luku neliöjuuren sisässä")
         in_sqrt = 0
     result = np.round(time_b - speed_b / accel + np.sqrt(in_sqrt) / accel, 2)
     if result < time_b:
-        muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a)
+        muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a, speed_unit)
         print(f"{muuttujat=}")
         print(f"{result=}")
         raise Exception(f"Aika kääntyy väärinpäin: keski ennen alkua")
     if result > time_a:
-        muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a)
+        muuttujat = (checkpoint, time_b, time_a, dist_b, speed_b, speed_a, speed_unit)
         print(f"{muuttujat=}")
         print(f"{result=}")
         raise Exception(f"Aika kääntyy väärinpäin: keski lopun jälkeen")
     return result
 
 
-def interpolate_time(row, df):
+def interpolate_time(row, df, speed_unit="km/h"):
     if not row.isna().any():
         return row["duration"]
     next_index = df[df["dist_from_speed"] > row["dist_from_speed"]].index.min()
     prev_speed, prev_t, prev_dist = df.loc[next_index - 1, ["speed", "duration", "dist_from_speed"]]
     next_speed, next_t = df.loc[next_index, ["speed", "duration"]]
-    return time_at_checkpoint(row["dist_from_speed"], prev_t, next_t, prev_dist, prev_speed, next_speed)
+    return time_at_checkpoint(row["dist_from_speed"], prev_t, next_t, prev_dist, prev_speed, next_speed, speed_unit)
 
 
 def get_next_time_segment(acceleration, prev_speed, distance_diff):
