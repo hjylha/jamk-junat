@@ -8,7 +8,7 @@ import pandas as pd
 from .api_fcns import request_data
 from .db_fcns import save_df_to_db, get_df_from_db, EXTRA_DB_PATH
 from .data_fcns import check_station_stops, get_raw_train_location_data, select_data_for_train
-from .data_fcns import get_acceleration, from_speed_to_distance, get_stops
+from .data_fcns import get_acceleration, from_speed_to_distance, get_stops, interpolate_time
 
 
 def train_dict(date, train_num, train_type, train_category):
@@ -349,14 +349,14 @@ class TrainLocations:
         return self.interval_dfs
 
 
-    def calculate_best_distance_estimate(self, method="median"):
+    def calculate_best_distance_estimate(self, method="median", num_of_decimals=-2):
         if method == "median":
             for data in self.interval_dfs:
-                data.distance = round(data.trains["dist_from_speed"].median(), -2)
+                data.distance = round(data.trains["dist_from_speed"].median(), num_of_decimals)
             return
         if method == "mean":
             for data in self.interval_dfs:
-                data.distance = round(data.trains["dist_from_speed"].mean(), -2)
+                data.distance = round(data.trains["dist_from_speed"].mean(), num_of_decimals)
         raise Exception(f"Method not supported: {method}")
 
 
@@ -385,25 +385,92 @@ class TrainLocations:
         for data in self.interval_dfs:
             dist_reference = data.trains["dist_from_speed"]
             data.location_df["dist_from_speed"] = data.location_df.apply(lambda r: scale_distance(r, dist_reference, data.distance), axis=1)
-            # entä nopeus?
-            # data.location_df["speed"] = data.location_df.apply(lambda r: scale_distance(r, dist_reference, data.distance, "speed"), axis=1)
+            # entä nopeus? km/h -> m/s
+            data.location_df["speed"] = data.location_df.apply(lambda r: scale_distance(r, dist_reference, data.distance, "speed"), axis=1) / 3.6
 
 
     def insert_checkpoints(self, checkpoint_interval=100):
-
+        if checkpoint_interval <= 0:
+            raise Exception(f"Checkpoint interval nonpositive: {checkpoint_interval}")
+        # tämä on huono tarkastus, mutta ehkä se ei haittaa
+        if checkpoint_interval > min(*[d.distance for d in self.interval_dfs]):
+            raise Exception(f"Checkpoint interval too large: {checkpoint_interval}")
         for data in self.interval_dfs:
-            data.checkpoints = np.arange(0, data.distance + 1, checkpoint_interval)
+            data.checkpoints = np.arange(0, data.distance + checkpoint_interval, checkpoint_interval)
             additions_template = pd.DataFrame([addition_dict(None, None, checkpoint, None, None) for checkpoint in data.checkpoints[1:-1]])
-            for date, train_num in data.trains[data.trains["in_analysis"] == True]:
+            for date, train_num in data.trains[data.trains["in_analysis"] == True].index:
                 additions = additions_template.copy()
                 additions["departureDate"] = date
                 additions["trainNumber"] = train_num
                 data.location_df = pd.concat([data.location_df, additions])
             data.location_df.reset_index(drop=True, inplace=True)
-            data.location_df.drop_duplicates(["departureDate", "trainNumber", "dist_from_speed"])
+            data.location_df.drop_duplicates(["departureDate", "trainNumber", "dist_from_speed"], inplace=True)
             data.location_df = data.location_df.sort_values(["departureDate", "trainNumber", "dist_from_speed"])
 
 
+    # interpoloinnit yksi kerrallaan testausta varten
+    def interpolate_duration_in_checkpoints(self):
+        for data in self.interval_dfs:
+            all_new_locations = pd.DataFrame()
+            for date, train_num in data.trains[data.trains["in_analysis"] == True].index:
+                new_locations = select_data_for_train(date, train_num, data.location_df).sort_values("dist_from_speed")
+                new_locations["duration"] = new_locations.apply(lambda r: interpolate_time(r, new_locations, "m/s"), axis=1)
+                new_locations["dist_from_speed"] = new_locations["dist_from_speed"].round()
+                # new_locations.drop_duplicates("dist_from_speed", inplace=True)
+                # new_locations.drop_duplicates("duration", inplace=True)
 
-    def interpolate_checkpoints(self):
-        pass
+                all_new_locations = pd.concat([all_new_locations, new_locations])
+            data.location_df = all_new_locations
+
+    def interpolate_speed_in_checkpoints(self):
+        for data in self.interval_dfs:
+            all_new_locations = pd.DataFrame()
+            for date, train_num in data.trains[data.trains["in_analysis"] == True].index:
+                new_locations = select_data_for_train(date, train_num, data.location_df).sort_values("dist_from_speed")
+                # interpoloidaan ajan suhteen
+                new_locations = new_locations.set_index("duration")
+                # nopeus oikeassa muodossa
+                new_locations["speed"] = new_locations["speed"].astype(float)
+                new_locations = new_locations.interpolate(method="index")
+                # palautetaan oletusindeksi
+                new_locations.drop_duplicates("dist_from_speed", inplace=True)
+                new_locations.reset_index(inplace=True)
+
+                all_new_locations = pd.concat([all_new_locations, new_locations])
+            data.location_df = all_new_locations
+
+
+    # interpoloidaan molemmat yhtä aikaa
+    def interpolate_values_in_checkpoints(self):
+        for data in self.interval_dfs:
+            all_new_locations = pd.DataFrame()
+            for date, train_num in data.trains[data.trains["in_analysis"] == True].index:
+                new_locations = select_data_for_train(date, train_num, data.location_df).sort_values("dist_from_speed")
+                new_locations["duration"] = new_locations.apply(lambda r: interpolate_time(r, new_locations, "m/s"), axis=1)
+                new_locations["dist_from_speed"] = new_locations["dist_from_speed"].round()
+                # new_locations.drop_duplicates("dist_from_speed", inplace=True)
+                # new_locations.drop_duplicates("duration", inplace=True)
+
+                # new_locations = new_locations.sort_values("duration")
+                new_locations = new_locations.set_index("duration")
+                new_locations["speed"] = new_locations["speed"].astype(float)
+                new_locations = new_locations.interpolate(method="index")
+
+                new_locations.drop_duplicates("dist_from_speed", inplace=True)
+                new_locations.reset_index(inplace=True)
+                
+                all_new_locations = pd.concat([all_new_locations, new_locations])
+            data.location_df = all_new_locations
+
+    def restrict_to_checkpoints(self):
+        for data in self.interval_dfs:
+            data.location_df = data.location_df[data.location_df["dist_from_speed"].isin(data.checkpoints)]
+            # data.location_df.drop_duplicates("dist_from_speed", inplace=True)
+            data.location_df.reset_index(drop=True, inplace=True)
+
+
+    # kaikki yhteen
+    def focus_on_checkpoints(self, checkpoint_interval=100):
+        self.insert_checkpoints(checkpoint_interval)
+        self.interpolate_values_in_checkpoints()
+        self.restrict_to_checkpoints()
