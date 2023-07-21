@@ -5,10 +5,17 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from sklearn.cluster import KMeans
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.model_selection import train_test_split
+
 from .api_fcns import request_data
 from .db_fcns import save_df_to_db, get_df_from_db, EXTRA_DB_PATH
 from .data_fcns import check_station_stops, get_raw_train_location_data, select_data_for_train
-from .data_fcns import get_acceleration, from_speed_to_distance, get_stops, interpolate_time
+from .data_fcns import get_acceleration, from_speed_to_distance, get_stops, interpolate_time, get_cluster_df
+from .plot_fcns import draw_kmeans_centroids
 
 
 def train_dict(date, train_num, train_type, train_category):
@@ -27,6 +34,10 @@ def addition_dict(date, train_num, distance, duration, speed):
         "duration": duration,
         "speed": speed
     }
+
+def get_acceleration_w_3_points(speeds, durations):
+    erotusosam = (speeds.diff(2) / durations.diff(2)).shift(-1).fillna(0)
+    return erotusosam * (speeds != 0).astype(int)
 
 
 def get_stop_times(timetable, extra_time=60):
@@ -64,6 +75,7 @@ def scale_distance(row, ref_df, best_dist_estimate, col_name="dist_from_speed"):
     max_dist = ref_df.loc[(row["departureDate"], row["trainNumber"])]
     return row[col_name] / max_dist * best_dist_estimate 
 
+
 @dataclass
 class StationsAndDates:
     start_station: str
@@ -80,6 +92,8 @@ class IntervalDfs:
     trains: pd.DataFrame
     location_df: pd.DataFrame
     checkpoints: np.ndarray
+    cluster_df: pd.DataFrame
+    kmeans: KMeans
 
 
 class TrainLocations:
@@ -253,8 +267,24 @@ class TrainLocations:
         return new_locations
 
 
+    def find_data(self, wait_times=None, do_filtering=True, do_limiting=True):
+        if wait_times is None:
+            wait_times = {
+                "trains": 0.5,
+                "timetables": 0.5,
+                "locations": 0.1
+            }
+        self.find_trains(wait_times["trains"])
+        self.find_timetables(wait_times["timetables"])
+        self.find_train_locations(do_filtering, wait_times["locations"])
+
+        if do_limiting:
+            self.limit_timetables()
+            self.limit_train_locations()
+
+
     def save_raw_data_to_db(self, db_path=None):
-        if db_path:
+        if db_path is not None:
             self.db_path = db_path
         
         # helpot tallennukset
@@ -267,8 +297,8 @@ class TrainLocations:
         save_df_to_db(trains_to_db, "trains", db_path=self.db_path)
 
 
-    def load_raw_data_from_db(self, db_path):
-        if db_path:
+    def load_raw_data_from_db(self, db_path=None):
+        if db_path is not None:
             self.db_path = db_path
         self.timetables = get_df_from_db("timetables", db_path=self.db_path)
         self.location_df_raw = get_df_from_db("locations_raw", db_path=self.db_path)
@@ -291,7 +321,7 @@ class TrainLocations:
         self.interval_dfs = []
         for i, station in enumerate(route[:-1]):
             station2 = route[i + 1]
-            self.interval_dfs.append(IntervalDfs(station, station2, None, trains_df_for_intervals.copy(), pd.DataFrame(), None))
+            self.interval_dfs.append(IntervalDfs(station, station2, None, trains_df_for_intervals.copy(), pd.DataFrame(), None, None, None))
 
         for date, train_num in trains.index:
             loc_df = select_data_for_train(date, train_num, self.location_df_raw).copy().reset_index(drop=True)
@@ -474,3 +504,24 @@ class TrainLocations:
         self.insert_checkpoints(checkpoint_interval)
         self.interpolate_values_in_checkpoints()
         self.restrict_to_checkpoints()
+
+
+    def calculate_accelerations(self, method="constant_accel"):
+        for data in self.interval_dfs:
+            if method == "constant_accel":
+                data.location_df["acceleration"] = get_acceleration(data.location_df["speed"], data.location_df["duration"])
+            elif method == "3_points":
+                data.location_df["acceleration"] = get_acceleration_w_3_points(data.location_df["speed"], data.location_df["duration"])
+            data.location_df["acceleration+"] = data.location_df["acceleration"].apply(lambda n: max(n, 0))
+            data.location_df["acceleration_abs"] = np.abs(data.location_df["acceleration"])
+
+    # col_name voi olla myös lista tms
+    def setup_for_clustering(self, col_name="acceleration"):
+        for data in self.interval_dfs:
+            data.cluster_df = get_cluster_df(data.location_df, col_name)
+
+    def run_kmeans_clustering(self, k, rng=None):
+        for data in self.interval_dfs:
+            self.kmeans = KMeans(n_clusters=k, n_init="auto", random_state=rng)
+            km.fit(df_to_cluster)
+
