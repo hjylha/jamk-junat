@@ -512,6 +512,8 @@ class TrainLocations:
                 data.location_df["acceleration"] = get_acceleration(data.location_df["speed"], data.location_df["duration"])
             elif method == "3_points":
                 data.location_df["acceleration"] = get_acceleration_w_3_points(data.location_df["speed"], data.location_df["duration"])
+            else:
+                raise Exception(f"unknown method: {method}")
             data.location_df["acceleration+"] = data.location_df["acceleration"].apply(lambda n: max(n, 0))
             data.location_df["acceleration_abs"] = np.abs(data.location_df["acceleration"])
 
@@ -522,6 +524,6 @@ class TrainLocations:
 
     def run_kmeans_clustering(self, k, rng=None):
         for data in self.interval_dfs:
-            self.kmeans = KMeans(n_clusters=k, n_init="auto", random_state=rng)
-            km.fit(df_to_cluster)
+            data.kmeans = KMeans(n_clusters=k, n_init="auto", random_state=rng)
+            data.kmeans.fit(data.cluster_df)
 
