@@ -166,9 +166,10 @@ def draw_many_graphs(y_name, *dfs, y_limits=None, graph_type="plot"):
 #     pass
 
 # clusters muotoa km.predict()
-def draw_kmeans_centroids(kmeans, checkpoints, clusters, max_plots=5, limit=0.5):
+def draw_kmeans_centroids(kmeans, checkpoints, clusters, limits=(-0.5, 0.5), max_plots=None, **kwargs):
     # jos on liikaa yritystä, pitäisikö siitä ilmoittaa?
-    max_plots = min(kmeans.cluster_centers_.shape[0], max_plots)
+    default_plots = kmeans.cluster_centers_.shape[0]
+    max_plots = min(default_plots, max_plots) if max_plots is not None else default_plots
 
     fig, ax = plt.subplots(figsize=(14, 5))
     c = clusters.value_counts().reset_index()
@@ -176,15 +177,26 @@ def draw_kmeans_centroids(kmeans, checkpoints, clusters, max_plots=5, limit=0.5)
         c = c.rename(columns={"cluster_id": "count", "index": "cluster_id"})
     # decrease = 0
     for i in range(max_plots):
-        label_text = f"{c.loc[i, 'cluster_id']}: {c.loc[i, 'count']}"
-        ax.plot(checkpoints / 1000, kmeans.cluster_centers_[c.loc[i, "cluster_id"], :], alpha=0.5, label=label_text)
+        label_text = f"{c.loc[i, 'cluster_id']}: {c.loc[i, 'count']} trains"
+        if "checkpoint_indices" in kwargs:
+            ax.plot(checkpoints / 1000, kwargs["unit_multiplier"] * kmeans.cluster_centers_[c.loc[i, "cluster_id"], kwargs["checkpoint_indices"]], alpha=0.5, label=label_text)
+        else:
+            ax.plot(checkpoints / 1000, kmeans.cluster_centers_[c.loc[i, "cluster_id"], :], alpha=0.5, label=label_text)
         # ax.plot(checkpoints / 1000, kmeans.cluster_centers_[c.loc[i, "cluster_id"], :], alpha=0.8 - 0.4 * np.sqrt(decrease))
         # decrease += 1
     
-    ax.set_title("Acceleration cluster centroids")
-    ax.set_ylabel("acceleration ($m/s^2$)")
-    ax.set_xlabel("distance ($km$)")
-    ax.set_ylim(-limit, limit)
+    default_title_text = "Acceleration cluster centroids"
+    default_ylabel_text = "acceleration ($m/s^2$)"
+    default_xlabel_text = "distance ($km$)"
+
+    title_text = kwargs["title_text"] if "title_text" in kwargs else default_title_text
+    ylabel_text = kwargs["ylabel_text"] if "ylabel_text" in kwargs else default_ylabel_text
+    xlabel_text = kwargs["xlabel_text"] if "xlabel_text" in kwargs else default_xlabel_text
+
+    ax.set_title(title_text)
+    ax.set_ylabel(ylabel_text)
+    ax.set_xlabel(xlabel_text)
+    ax.set_ylim(limits)
     ax.legend()
     ax.grid()
     plt.show()
