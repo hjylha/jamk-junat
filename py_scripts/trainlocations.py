@@ -172,7 +172,8 @@ class TrainLocations:
 
             if wait_time:
                 time.sleep(wait_time)
-        self.train_df = self.train_df.set_index(["departureDate", "trainNumber"])
+        if not self.train_df.empty:
+            self.train_df = self.train_df.set_index(["departureDate", "trainNumber"])
         return self.train_df
 
     # reitit lienee hyvä saada helposti
@@ -249,7 +250,7 @@ class TrainLocations:
 
     def limit_train_locations(self):
         new_locations = pd.DataFrame()
-        for date, train_num in self.train_df[self.train_df["actualTime_exists"]].index:
+        for date, train_num in self.train_df[self.train_df["actualTime_exists"] == True].index:
             # if not self.train_df.loc[(date, train_num), "actualTime_exists"]:
             #     continue
             loc_df = select_data_for_train(date, train_num, self.location_df_raw)
@@ -267,34 +268,43 @@ class TrainLocations:
         return new_locations
 
 
-    def find_data(self, wait_times=None, do_filtering=True, do_limiting=True):
+    def find_data(self, wait_times=None, do_filtering=True, do_limiting=True, force_reset=False):
         if wait_times is None:
             wait_times = {
                 "trains": 0.5,
                 "timetables": 0.5,
                 "locations": 0.1
             }
-        self.find_trains(wait_times["trains"])
-        self.find_timetables(wait_times["timetables"])
-        self.find_train_locations(do_filtering, wait_times["locations"])
+        if isinstance(wait_times, (float, int)):
+            wait_times = {"trains": wait_times, "timetables": wait_times, "locations": wait_times}
+        if force_reset or self.train_df is None:
+            self.find_trains(wait_times["trains"])
+            print(f"Trains found: {len(self.train_df)}")
+        if force_reset or self.timetables is None:
+            self.find_timetables(wait_times["timetables"])
+            print(f'Trains with timetables: {len(self.timetables.apply(lambda r: (r["departureDate"], r["trainNumber"]), axis=1).unique())}')
+        if force_reset or self.location_df_raw is None:
+            self.find_train_locations(do_filtering, wait_times["locations"])
+            print(f'Trains with locations: {len(self.location_df_raw.apply(lambda r: (r["departureDate"], r["trainNumber"]), axis=1).unique())}')
 
         if do_limiting:
             self.limit_timetables()
-            self.limit_train_locations()
+            if not do_filtering:
+                self.limit_train_locations()
 
 
-    def save_raw_data_to_db(self, db_path=None):
+    def save_raw_data_to_db(self, db_path=None, if_exists_action="fail"):
         if db_path is not None:
             self.db_path = db_path
         
         # helpot tallennukset
-        save_df_to_db(self.timetables, "timetables", db_path=self.db_path)
-        save_df_to_db(self.location_df_raw, "locations_raw", db_path=self.db_path)
+        save_df_to_db(self.timetables, "timetables", db_path=self.db_path, if_exists_action=if_exists_action)
+        save_df_to_db(self.location_df_raw, "locations_raw", db_path=self.db_path, if_exists_action=if_exists_action)
 
         # index ja stations pitää ottaa huomioon
         trains_to_db = self.train_df.reset_index().copy()
         trains_to_db["stations"] = trains_to_db["stations"].apply(lambda t: ",".join(t))
-        save_df_to_db(trains_to_db, "trains", db_path=self.db_path)
+        save_df_to_db(trains_to_db, "trains", db_path=self.db_path, if_exists_action=if_exists_action)
 
 
     def load_raw_data_from_db(self, db_path=None):
@@ -304,8 +314,9 @@ class TrainLocations:
         self.location_df_raw = get_df_from_db("locations_raw", db_path=self.db_path)
         # junat vaativat lisähuomiota
         trains_loading = get_df_from_db("trains", db_path=self.db_path)
-        trains_loading["stations"] = trains_loading["stations"].apply(lambda s: tuple(s.split(",")))
-        self.train_df = trains_loading.set_index(["departureDate", "trainNumber"])
+        if trains_loading is not None:
+            trains_loading["stations"] = trains_loading["stations"].apply(lambda s: tuple(s.split(",")))
+            self.train_df = trains_loading.set_index(["departureDate", "trainNumber"])
 
 
     # jaetaan matka (ja data) osiin reitin perusteella
@@ -390,7 +401,7 @@ class TrainLocations:
         raise Exception(f"Method not supported: {method}")
 
 
-    def filter_data_based_on_distance(self, percentage=1):
+    def filter_data_based_on_distance(self, percentage=1, min_error=500):
         if percentage < 0 or percentage > 100:
             raise Exception(f"nonsensical percentage: {percentage}")
         upper_multiplier = 1 + percentage / 100
@@ -402,8 +413,9 @@ class TrainLocations:
             return row["dist_from_speed"] >= lower_bound and row["dist_from_speed"] <= upper_bound
 
         for data in self.interval_dfs:
-            lower_bound = lower_multiplier * data.distance
-            upper_bound = upper_multiplier * data.distance
+            median_dist = data.trains["dist_from_speed"].median()
+            lower_bound = min(lower_multiplier * median_dist, median_dist - min_error)
+            upper_bound = max(upper_multiplier * median_dist, median_dist + min_error)
             # data.trains["in_analysis"] = data.trains["dist_from_speed"].apply(lambda d: d >= lower_bound and d <= upper_bound)
             data.trains["in_analysis"] = data.trains.apply(lambda r: filtering_fcn(r, lower_bound, upper_bound), axis=1)
             data.location_df["in_analysis"] = data.location_df.apply(lambda r: data.trains.loc[(r["departureDate"], r["trainNumber"]), "in_analysis"], axis=1)
@@ -522,8 +534,15 @@ class TrainLocations:
         for data in self.interval_dfs:
             data.cluster_df = get_cluster_df(data.location_df, col_name)
 
-    def run_kmeans_clustering(self, k, rng=None):
-        for data in self.interval_dfs:
+    def run_kmeans_clustering(self, nums_of_clusters, rng=None):
+        if isinstance(nums_of_clusters, int):
+            nums_of_clusters = [nums_of_clusters for _ in self.interval_dfs]
+        for k, data in zip(nums_of_clusters, self.interval_dfs):
             data.kmeans = KMeans(n_clusters=k, n_init="auto", random_state=rng)
             data.kmeans.fit(data.cluster_df)
 
+    def draw_cluster_centroids(self):
+        # TODO: väli näkyviin
+        for data in self.interval_dfs:
+            clusters = pd.Series(data.kmeans.labels_, index=data.cluster_df.index, name="cluster_id")
+            draw_kmeans_centroids(data.kmeans, data.checkpoints, clusters)
