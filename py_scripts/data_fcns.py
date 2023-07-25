@@ -174,13 +174,16 @@ def approximate_speed(location_changes, durations):
 
 
 # nopeus km/h, duration s, palautusarvo m/s/s
-def get_acceleration(speeds, durations):
+def get_acceleration(speeds, durations, change_unit=True):
     accel = np.zeros(len(speeds))
     # speed_diff = speeds[1:].to_numpy() - speeds[:-1].to_numpy()
     speed_diff = speeds.diff(1)[1:]
     # time_diff = durations[1:].to_numpy() - durations[:-1].to_numpy()
     time_diff = durations.diff(1).to_numpy()[1:]
-    accel[1:] = speed_diff / time_diff / 3.6
+    if change_unit:
+        accel[1:] = speed_diff / time_diff / 3.6
+    else:
+        accel[1:] = speed_diff / time_diff
     return accel
 
 
