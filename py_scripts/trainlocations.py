@@ -1,9 +1,12 @@
 
 import time
 from dataclasses import dataclass
+from itertools import combinations
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
@@ -36,8 +39,8 @@ def addition_dict(date, train_num, distance, duration, speed):
     }
 
 def get_acceleration_w_3_points(speeds, durations):
-    erotusosam = (speeds.diff(2) / durations.diff(2)).shift(-1).fillna(0)
-    return erotusosam * (speeds != 0).astype(int)
+    diff_quotient = (speeds.diff(2) / durations.diff(2)).shift(-1).fillna(0)
+    return diff_quotient * (speeds != 0).astype(int)
 
 
 def get_stop_times(timetable, extra_time=60):
@@ -114,7 +117,9 @@ class TrainLocations:
         self.train_df = kwargs.get("train_df")
         self.route = kwargs.get("route")
         self.interval_dfs = kwargs.get("interval_dfs")
-    
+        self.clustering_data = kwargs.get("clustering_data")
+
+
     # jos haluaa kuluttaa aikaa...
     def find_trains_and_timetables(self, wait_time=None):
         SELECTED_KEYS = ["departureDate", "trainNumber", "operatorShortCode", "trainType", "trainCategory", "cancelled", "version", "timetableType"]
@@ -408,7 +413,7 @@ class TrainLocations:
         lower_multiplier = 1 - percentage / 100
 
         def filtering_fcn(row, lower_bound, upper_bound):
-            if not row["in_analysis"]:
+            if not row["in_analysis"] or not row["dist_from_speed"]:
                 return False
             return row["dist_from_speed"] >= lower_bound and row["dist_from_speed"] <= upper_bound
 
@@ -455,7 +460,7 @@ class TrainLocations:
         for data in self.interval_dfs:
             all_new_locations = pd.DataFrame()
             for date, train_num in data.trains[data.trains["in_analysis"] == True].index:
-                new_locations = select_data_for_train(date, train_num, data.location_df).sort_values("dist_from_speed")
+                new_locations = select_data_for_train(date, train_num, data.location_df).sort_index().reset_index(drop=True).sort_values("dist_from_speed")
                 new_locations["duration"] = new_locations.apply(lambda r: interpolate_time(r, new_locations, "m/s"), axis=1)
                 new_locations["dist_from_speed"] = new_locations["dist_from_speed"].round()
                 # new_locations.drop_duplicates("dist_from_speed", inplace=True)
@@ -487,7 +492,7 @@ class TrainLocations:
         for data in self.interval_dfs:
             all_new_locations = pd.DataFrame()
             for date, train_num in data.trains[data.trains["in_analysis"] == True].index:
-                new_locations = select_data_for_train(date, train_num, data.location_df).sort_values("dist_from_speed")
+                new_locations = select_data_for_train(date, train_num, data.location_df).sort_index().reset_index(drop=True).sort_values("dist_from_speed")
                 new_locations["duration"] = new_locations.apply(lambda r: interpolate_time(r, new_locations, "m/s"), axis=1)
                 new_locations["dist_from_speed"] = new_locations["dist_from_speed"].round()
                 # new_locations.drop_duplicates("dist_from_speed", inplace=True)
@@ -518,12 +523,37 @@ class TrainLocations:
         self.restrict_to_checkpoints()
 
 
+    def save_checkpoint_data_to_db(self, db_path=None, if_exists_action="fail"):
+        if db_path is not None:
+            self.db_path = db_path
+        for i, data in enumerate(self.interval_dfs):
+            save_df_to_db(data.trains.reset_index(), f"trains_{i}",  db_path=self.db_path, if_exists_action=if_exists_action)
+            save_df_to_db(data.location_df.reset_index(), f"locations_{i}",  db_path=self.db_path, if_exists_action=if_exists_action)
+    
+    def load_checkpoint_data_from_db(self, db_path=None):
+        if db_path is not None:
+            self.db_path = db_path
+        trains_0 = get_df_from_db("trains_0", db_path=self.db_path).set_index(["departureDate", "trainNumber"])
+        date0, train_num0 = trains_0.index[0]
+        route = self.train_df.loc[(date0, train_num0), "stations"]
+
+        # locations_0 = get_df_from_db("locations_0", db_path=self.db_path)
+        # self.interval_dfs = [IntervalDfs(route[0], route[1], None, trains_0, locations_0, locations_0["dist_from_speed"].unique(), None, None)]
+        self.interval_dfs = []
+        for i, station in enumerate(route[:-1]):
+            trains = get_df_from_db(f"trains_{i}", db_path=self.db_path).set_index(["departureDate", "trainNumber"])
+            locations = get_df_from_db(f"locations_{i}", db_path=self.db_path)
+            self.interval_dfs.append(IntervalDfs(station, route[i+1], locations["dist_from_speed"].max(), trains, locations, locations["dist_from_speed"].unique(), None, None))
+
+
+    # lasketaan kiihtyvyydet
     def calculate_accelerations(self, method="constant_accel"):
         for data in self.interval_dfs:
             if method == "constant_accel":
-                data.location_df["acceleration"] = get_acceleration(data.location_df["speed"], data.location_df["duration"])
+                data.location_df["acceleration"] = get_acceleration(data.location_df["speed"], data.location_df["duration"], change_unit=False)
             elif method == "3_points":
                 data.location_df["acceleration"] = get_acceleration_w_3_points(data.location_df["speed"], data.location_df["duration"])
+                data.location_df["speed_derivative"] = data.location_df.apply(lambda r: r["acceleration"] / r["speed"] if r["speed"] != 0 else 0, axis=1)
             else:
                 raise Exception(f"unknown method: {method}")
             data.location_df["acceleration+"] = data.location_df["acceleration"].apply(lambda n: max(n, 0))
@@ -541,8 +571,63 @@ class TrainLocations:
             data.kmeans = KMeans(n_clusters=k, n_init="auto", random_state=rng)
             data.kmeans.fit(data.cluster_df)
 
-    def draw_cluster_centroids(self):
-        # TODO: väli näkyviin
+    def draw_cluster_centroids(self, clustered_based_on="acceleration"):
         for data in self.interval_dfs:
             clusters = pd.Series(data.kmeans.labels_, index=data.cluster_df.index, name="cluster_id")
-            draw_kmeans_centroids(data.kmeans, data.checkpoints, clusters)
+            if clustered_based_on == "acceleration":
+                title_text = f"Acceleration cluster centroids ({data.start_station}-{data.end_station})"
+                draw_kmeans_centroids(data.kmeans, data.checkpoints, clusters, title_text=title_text)
+            elif clustered_based_on == "speed":
+                title_text_speed = f"Speed cluster centroids ({data.start_station}-{data.end_station})" 
+                ylabel_text_speed = "speed ($km/h$)"
+                speed_indices = list(range(len(data.checkpoints)))
+                max_speed = np.round(3.6 * data.kmeans.cluster_centers_.max()) + 1
+                draw_kmeans_centroids(data.kmeans, data.checkpoints, clusters, limits=(0, max_speed), title_text=title_text_speed, ylabel_text=ylabel_text_speed, unit_multiplier=3.6, checkpoint_indices=speed_indices)
+            elif clustered_based_on == "speed_and_acceleration":
+                # nopeus
+                title_text_speed = f"Speed cluster centroids ({data.start_station}-{data.end_station})" 
+                ylabel_text_speed = "speed ($km/h$)"
+                speed_indices = list(range(len(data.checkpoints)))
+                max_speed = np.round(3.6 * data.kmeans.cluster_centers_.max()) + 1
+                draw_kmeans_centroids(data.kmeans, data.checkpoints, clusters, limits=(0, max_speed), title_text=title_text_speed, ylabel_text=ylabel_text_speed, unit_multiplier=3.6, checkpoint_indices=speed_indices)
+                # kiihtyvyys
+                # TODO: EI OLE OIKEIN!
+                title_text_acceleration = f"Acceleration cluster centroids ({data.start_station}-{data.end_station})"
+                accel_indices = list(range(len(data.checkpoints), 2 * len(data.checkpoints)))
+                draw_kmeans_centroids(data.kmeans, data.checkpoints, clusters, title_text=title_text_acceleration, unit_multiplier=1, checkpoint_indices=accel_indices)
+            else:
+                raise Exception(f"Not valid basis for clustering: {clustered_based_on}")
+
+
+    def do_clustering(self, nums_of_clusters, rng=None, clustered_based_on="acceleration", draw_graphs=True):
+        if clustered_based_on == "acceleration":
+            self.calculate_accelerations()
+            self.setup_for_clustering()
+        elif clustered_based_on == "speed_and_acceleration":
+            self.calculate_accelerations(method="3_points")
+            self.setup_for_clustering(col_name=["speed", "speed_derivative"])
+        elif clustered_based_on == "speed":
+            self.setup_for_clustering(col_name="speed")
+        self.run_kmeans_clustering(nums_of_clusters, rng)
+        if draw_graphs:
+            self.draw_cluster_centroids(clustered_based_on)
+
+
+    def compare_clusters(self):
+        clusters = pd.DataFrame()
+        for data in self.interval_dfs:
+            clusters[f"{data.start_station}-{data.end_station}"] = pd.Series(data.kmeans.labels_, index=data.cluster_df.index)
+        clusters.dropna(inplace=True)
+
+        for comb in combinations(clusters.columns, 2):
+            x = np.array(clusters[comb[0]]).reshape(-1, 1)
+            y = clusters[comb[1]]
+            rfc = RandomForestClassifier()
+            rfc.fit(x, y)
+            y_pred = rfc.predict(x)
+            print(f"{comb[0]} vs. {comb[1]}")
+            print(f"Accuracy: {rfc.score(x, y)}\n")
+            print(classification_report(y, y_pred))
+            # print(classification_report(clusters[comb[0]], clusters[comb[1]]))
+            print()
+
