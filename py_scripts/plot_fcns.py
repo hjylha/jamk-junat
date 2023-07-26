@@ -187,7 +187,7 @@ def draw_kmeans_centroids(kmeans, checkpoints, clusters, limits=(-0.5, 0.5), max
     
     default_title_text = "Acceleration cluster centroids"
     default_ylabel_text = "acceleration ($m/s^2$)"
-    default_xlabel_text = "distance ($km$)"
+    default_xlabel_text = "distance travelled ($km$)"
 
     title_text = kwargs["title_text"] if "title_text" in kwargs else default_title_text
     ylabel_text = kwargs["ylabel_text"] if "ylabel_text" in kwargs else default_ylabel_text
