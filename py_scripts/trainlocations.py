@@ -256,6 +256,7 @@ class TrainLocations:
 
         # self.db_path = EXTRA_DB_PATH.parent / f"{self.start_station}-{self.end_station}_{stations_and_dates.start_date}_{stations_and_dates.end_date}.db"
         self.db_path = EXTRA_DB_PATH.parent / f"{self.start_station}-{self.end_station}.db"
+        self.route_db_path = kwargs.get("route_db_path")
         
         self.timetables = kwargs.get("timetables")
         self.location_df_raw = kwargs.get("location_df_raw")
@@ -538,6 +539,9 @@ class TrainLocations:
         # self.location_df.reset_index(drop=True, inplace=True)
         # self.location_dfs = [loc_df.reset_index(drop=True) for loc_df in self.location_dfs]
         # self.train_dfs = [get_distances_from_df(loc_df) for loc_df in self.location_dfs]
+        db_filename = f"{'-'.join(route)}.db"
+        self.route_db_path = self.db_path.parent / db_filename
+
         return self.interval_dfs
 
 
@@ -636,16 +640,16 @@ class TrainLocations:
 
     def save_checkpoint_data_to_db(self, db_path=None, if_exists_action="fail"):
         if db_path is not None:
-            self.db_path = db_path
+            self.route_db_path = db_path
         for i, data in enumerate(self.interval_dfs):
-            save_df_to_db(data.trains.reset_index(), f"trains_{i}",  db_path=self.db_path, if_exists_action=if_exists_action)
-            save_df_to_db(data.location_df.reset_index(), f"locations_{i}",  db_path=self.db_path, if_exists_action=if_exists_action)
-            save_df_to_db(data.clustering_data.location_df.reset_index(), f"checkpoint_locations_{i}",  db_path=self.db_path, if_exists_action=if_exists_action)
+            save_df_to_db(data.trains.reset_index(), f"trains_{i}",  db_path=self.route_db_path, if_exists_action=if_exists_action)
+            save_df_to_db(data.location_df.reset_index(), f"locations_{i}",  db_path=self.route_db_path, if_exists_action=if_exists_action)
+            save_df_to_db(data.clustering_data.location_df.reset_index(), f"checkpoint_locations_{i}",  db_path=self.route_db_path, if_exists_action=if_exists_action)
     
     def load_checkpoint_data_from_db(self, db_path=None):
         if db_path is not None:
-            self.db_path = db_path
-        trains_0 = get_df_from_db("trains_0", db_path=self.db_path).set_index(["departureDate", "trainNumber"])
+            self.route_db_path = db_path
+        trains_0 = get_df_from_db("trains_0", db_path=self.route_db_path).set_index(["departureDate", "trainNumber"])
         date0, train_num0 = trains_0.index[0]
         route = self.train_df.loc[(date0, train_num0), "stations"]
 
@@ -653,9 +657,9 @@ class TrainLocations:
         # self.interval_dfs = [IntervalDfs(route[0], route[1], None, trains_0, locations_0, locations_0["dist_from_speed"].unique(), None, None)]
         self.interval_dfs = []
         for i, station in enumerate(route[:-1]):
-            trains = get_df_from_db(f"trains_{i}", db_path=self.db_path).set_index(["departureDate", "trainNumber"])
-            c_locations = get_df_from_db(f"locations_{i}", db_path=self.db_path)
-            locations = get_df_from_db(f"checkpoint_locations_{i}", db_path=self.db_path)
+            trains = get_df_from_db(f"trains_{i}", db_path=self.route_db_path).set_index(["departureDate", "trainNumber"])
+            c_locations = get_df_from_db(f"locations_{i}", db_path=self.route_db_path)
+            locations = get_df_from_db(f"checkpoint_locations_{i}", db_path=self.route_db_path)
             self.interval_dfs.append(IntervalDfs(station, route[i+1], locations["dist_from_speed"].max(), trains, c_locations, ClusterData(locations, locations["dist_from_speed"].unique(), None, None)))
 
 
