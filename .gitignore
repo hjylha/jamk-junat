@@ -4,3 +4,6 @@
 *pycache*
 .idea/
 .ipynb_checkpoints/
+
+.venv/
+data/

@@ -2,6 +2,8 @@
 
 Toistaiseksi tässä on muutama notebook:
 
+* [koko_prosessi.ipynb](koko_prosessi.ipynb) sisältää analyysin vaiheet asemien ja päivien valinnasta klusteroinnin tulosten esitykseen.
+
 * [klusterointia.ipynb](klusterointia.ipynb) tarkastelee Jämsä-Orivesi-välin junavuoroja ja yrittää klusteroida niitä kiihtyvyyksien perusteella
 
 * notebookissa [datahaku.ipynb](datahaku.ipynb) kerätään analysoitavaksi halutut junavuorot asemavälin ja päivämäärän perusteella
