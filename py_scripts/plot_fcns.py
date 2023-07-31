@@ -171,13 +171,18 @@ def draw_kmeans_centroids(kmeans, checkpoints, clusters, limits=(-0.5, 0.5), max
     default_plots = kmeans.cluster_centers_.shape[0]
     max_plots = min(default_plots, max_plots) if max_plots is not None else default_plots
 
+    min_num_of_trains = kwargs.get("min_num_of_trains") if kwargs.get("min_num_of_trains") is not None else 1
+
     fig, ax = plt.subplots(figsize=(14, 5))
     c = clusters.value_counts().reset_index()
     if "index" in c.columns:
         c = c.rename(columns={"cluster_id": "count", "index": "cluster_id"})
     # decrease = 0
     for i in range(max_plots):
-        label_text = f"{c.loc[i, 'cluster_id']}: {c.loc[i, 'count']} trains"
+        num_of_trains = c.loc[i, 'count']
+        if num_of_trains < min_num_of_trains:
+            continue
+        label_text = f"{c.loc[i, 'cluster_id']}: {num_of_trains} trains"
         if "checkpoint_indices" in kwargs:
             ax.plot(checkpoints / 1000, kwargs["unit_multiplier"] * kmeans.cluster_centers_[c.loc[i, "cluster_id"], kwargs["checkpoint_indices"]], alpha=0.5, label=label_text)
         else:
