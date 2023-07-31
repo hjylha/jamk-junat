@@ -646,13 +646,14 @@ class TrainLocations:
             save_df_to_db(data.location_df.reset_index(), f"locations_{i}",  db_path=self.route_db_path, if_exists_action=if_exists_action)
             save_df_to_db(data.clustering_data.location_df.reset_index(), f"checkpoint_locations_{i}",  db_path=self.route_db_path, if_exists_action=if_exists_action)
     
-    def load_checkpoint_data_from_db(self, route, db_path=None):
+    def load_checkpoint_data_from_db(self, route, db_path=None, verbose=True):
         if db_path is not None:
             self.route_db_path = db_path
         else:
             db_filename = f"{'-'.join(route)}.db"
             self.route_db_path = self.db_path.parent / db_filename
-        print(f"{self.route_db_path}")
+        if verbose:
+            print(f"Ladataan dataa DB:stä: {self.route_db_path}")
         trains_0 = get_df_from_db("trains_0", db_path=self.route_db_path).set_index(["departureDate", "trainNumber"])
         date0, train_num0 = trains_0.index[0]
         route = self.train_df.loc[(date0, train_num0), "stations"]
@@ -685,6 +686,8 @@ class TrainLocations:
             data.calculate_accelerations(method)
         
     def get_checkpoint_data_for_full_route(self):
+        if len(self.interval_dfs) == 1:
+            return
         trains_fr = pd.DataFrame()
         for data in self.interval_dfs:
             indices = data.trains[data.trains["in_analysis"] == True].index
@@ -715,10 +718,11 @@ class TrainLocations:
         if isinstance(nums_of_clusters, int):
             nums_of_clusters = [nums_of_clusters for _ in self.interval_dfs]
         # mikä on koko reitin klustereiden lukumäärä?
-        try:
-            self.clustering_data.run_kmeans_clustering(nums_of_clusters[0], rng)
-        except ValueError as error:
-                print(f"{type(error)}: {error} ({nums_of_clusters[0]=}, shape={self.clustering_data.cluster_df.shape})")
+        if len(self.interval_dfs) > 1:
+            try:
+                self.clustering_data.run_kmeans_clustering(nums_of_clusters[0], rng)
+            except ValueError as error:
+                    print(f"{type(error)}: {error} ({nums_of_clusters[0]=}, shape={self.clustering_data.cluster_df.shape})")
         for k, data in zip(nums_of_clusters, self.interval_dfs):
             try:
                 data.run_kmeans_clustering(k, rng)
@@ -726,10 +730,11 @@ class TrainLocations:
                 print(f"{type(error)}: {error} ({k=}, shape={data.clustering_data.cluster_df.shape})")
 
     def draw_cluster_centroids(self, clustered_based_on="acceleration"):
-        try:
-            self.clustering_data.draw_cluster_centroids(self.start_station, self.end_station, clustered_based_on)
-        except AttributeError as error:
-            print(f"{self.start_station}-{self.end_station}: {type(error)}: {error}")
+        if len(self.interval_dfs) > 1:
+            try:
+                self.clustering_data.draw_cluster_centroids(self.start_station, self.end_station, clustered_based_on)
+            except AttributeError as error:
+                print(f"{self.start_station}-{self.end_station}: {type(error)}: {error}")
         for data in self.interval_dfs:
             try:
                 data.draw_cluster_centroids(clustered_based_on)
