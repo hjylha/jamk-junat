@@ -177,7 +177,7 @@ class ClusterData:
         station_interval_str = f" ({start_station}-{end_station})"
         if clustered_based_on == "acceleration":
             title_text = f"Acceleration cluster centroids{station_interval_str}"
-            draw_kmeans_centroids(self.kmeans, self.checkpoints, clusters, title_text=title_text)
+            draw_kmeans_centroids(self.kmeans, self.checkpoints, clusters, min_num_of_trains=min_num_of_trains, title_text=title_text)
             return
         if clustered_based_on == "speed":
             title_text_speed = f"Speed cluster centroids{station_interval_str}" 
@@ -683,15 +683,41 @@ class TrainLocations:
     def calculate_accelerations(self, method="constant_accel"):
         for data in self.interval_dfs:
             data.calculate_accelerations(method)
+        
+    def get_checkpoint_data_for_full_route(self):
+        trains_fr = pd.DataFrame()
+        for data in self.interval_dfs:
+            indices = data.trains[data.trains["in_analysis"] == True].index
+            trains_fr[f"{data.start_station}-{data.end_station}"] = pd.Series(np.ones(len(indices)), index=indices)
+        trains_fr.dropna(inplace=True)
+        trains_fr = trains_fr.index
+
+        distance_travelled = 0
+        checkpoint_df = pd.DataFrame()
+        for data in self.interval_dfs:
+            data.clustering_data.location_df["in_analysis"] = data.clustering_data.location_df.apply(lambda r: (r["departureDate"], r["trainNumber"]) in trains_fr, axis=1)
+            checkpoints_to_add = data.clustering_data.location_df[data.clustering_data.location_df["in_analysis"]].copy()
+            checkpoints_to_add = checkpoints_to_add[checkpoints_to_add["dist_from_speed"] != 0]
+            checkpoints_to_add["dist_from_speed"] = checkpoints_to_add["dist_from_speed"] + distance_travelled
+            checkpoint_df = pd.concat([checkpoint_df, checkpoints_to_add])
+            distance_travelled += data.distance
+        
+        self.clustering_data = ClusterData(checkpoint_df, checkpoint_df["dist_from_speed"].unique(), None, None)
 
     # col_name voi olla myös lista tms
     def setup_for_clustering(self, col_name="acceleration"):
+        self.clustering_data.setup_for_clustering(col_name)
         for data in self.interval_dfs:
             data.setup_for_clustering(col_name)
 
     def run_kmeans_clustering(self, nums_of_clusters, rng=None):
         if isinstance(nums_of_clusters, int):
             nums_of_clusters = [nums_of_clusters for _ in self.interval_dfs]
+        # mikä on koko reitin klustereiden lukumäärä?
+        try:
+            self.clustering_data.run_kmeans_clustering(nums_of_clusters[0], rng)
+        except ValueError as error:
+                print(f"{type(error)}: {error} ({k=}, shape={self.clustering_data.cluster_df.shape})")
         for k, data in zip(nums_of_clusters, self.interval_dfs):
             try:
                 data.run_kmeans_clustering(k, rng)
@@ -699,8 +725,15 @@ class TrainLocations:
                 print(f"{type(error)}: {error} ({k=}, shape={data.clustering_data.cluster_df.shape})")
 
     def draw_cluster_centroids(self, clustered_based_on="acceleration"):
+        try:
+            self.clustering_data.draw_cluster_centroids(self.start_station, self.end_station, clustered_based_on)
+        except AttributeError as error:
+            print(f"{self.start_station}-{self.end_station}: {type(error)}: {error}")
         for data in self.interval_dfs:
-            data.draw_cluster_centroids(clustered_based_on)
+            try:
+                data.draw_cluster_centroids(clustered_based_on)
+            except AttributeError as error:
+                print(f"{data.start_station}-{data.end_station}: {type(error)}: {error}")
             # clusters = pd.Series(data.clustering_data.kmeans.labels_, index=data.clustering_data.cluster_df.index, name="cluster_id")
             # if clustered_based_on == "acceleration":
             #     title_text = f"Acceleration cluster centroids ({data.start_station}-{data.end_station})"
