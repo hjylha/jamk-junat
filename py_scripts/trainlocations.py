@@ -695,6 +695,7 @@ class TrainLocations:
         distance_travelled = 0
         checkpoint_df = pd.DataFrame()
         for data in self.interval_dfs:
+            # tarvitaanko duration?
             data.clustering_data.location_df["in_analysis"] = data.clustering_data.location_df.apply(lambda r: (r["departureDate"], r["trainNumber"]) in trains_fr, axis=1)
             checkpoints_to_add = data.clustering_data.location_df[data.clustering_data.location_df["in_analysis"]].copy()
             checkpoints_to_add = checkpoints_to_add[checkpoints_to_add["dist_from_speed"] != 0]
@@ -717,7 +718,7 @@ class TrainLocations:
         try:
             self.clustering_data.run_kmeans_clustering(nums_of_clusters[0], rng)
         except ValueError as error:
-                print(f"{type(error)}: {error} ({k=}, shape={self.clustering_data.cluster_df.shape})")
+                print(f"{type(error)}: {error} ({nums_of_clusters[0]=}, shape={self.clustering_data.cluster_df.shape})")
         for k, data in zip(nums_of_clusters, self.interval_dfs):
             try:
                 data.run_kmeans_clustering(k, rng)
@@ -763,11 +764,14 @@ class TrainLocations:
     def do_clustering(self, nums_of_clusters, rng=None, clustered_based_on="acceleration", draw_graphs=True):
         if clustered_based_on == "acceleration":
             self.calculate_accelerations()
+            self.get_checkpoint_data_for_full_route()
             self.setup_for_clustering()
         elif clustered_based_on == "speed_and_acceleration":
             self.calculate_accelerations(method="3_points")
+            self.get_checkpoint_data_for_full_route()
             self.setup_for_clustering(col_name=["speed", "speed_derivative"])
         elif clustered_based_on == "speed":
+            self.get_checkpoint_data_for_full_route()
             self.setup_for_clustering(col_name="speed")
         self.run_kmeans_clustering(nums_of_clusters, rng)
         if draw_graphs:
@@ -776,6 +780,7 @@ class TrainLocations:
 
     def compare_clusters(self):
         clusters = pd.DataFrame()
+        clusters[f"{self.start_station}-{self.end_station}"] = pd.Series(self.clustering_data.kmeans.labels_, index=self.clustering_data.cluster_df.index)
         for data in self.interval_dfs:
             clusters[f"{data.start_station}-{data.end_station}"] = pd.Series(data.clustering_data.kmeans.labels_, index=data.clustering_data.cluster_df.index)
         clusters.dropna(inplace=True)
