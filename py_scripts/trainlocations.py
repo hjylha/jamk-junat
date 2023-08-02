@@ -654,7 +654,11 @@ class TrainLocations:
             self.route_db_path = self.db_path.parent / db_filename
         if verbose:
             print(f"Ladataan dataa DB:stä: {self.route_db_path}")
-        trains_0 = get_df_from_db("trains_0", db_path=self.route_db_path).set_index(["departureDate", "trainNumber"])
+        try:
+            trains_0 = get_df_from_db("trains_0", db_path=self.route_db_path).set_index(["departureDate", "trainNumber"])
+        except AttributeError:
+            print("probably nothing to load...")
+            return
         date0, train_num0 = trains_0.index[0]
         route = self.train_df.loc[(date0, train_num0), "stations"]
 
@@ -669,6 +673,8 @@ class TrainLocations:
 
     def checkpoint_data_exists(self):
         if self.interval_dfs is None:
+            return False
+        if not self.interval_dfs:
             return False
         for data in self.interval_dfs:
             if data.trains is None or data.trains.empty:
