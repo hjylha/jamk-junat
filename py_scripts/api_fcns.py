@@ -1,4 +1,6 @@
 
+import time
+
 import requests
 
 
@@ -26,5 +28,9 @@ def request_data(rajapinta, **kwargs):
         return
     if req.status_code == 400:
         print(f"Error: status code {req.status_code} Bad Request, {url=}")
+        return
+    if req.status_code == 500:
+        print(f"Error: status code {req.status_code} Internal Server Error, {url=}")
+        time.sleep(1)
         return
     raise Exception(f"Error: status code {req.status_code}")
