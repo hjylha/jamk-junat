@@ -171,6 +171,21 @@ class ClusterData:
         self.kmeans = KMeans(n_clusters=num_of_clusters, n_init="auto", random_state=rng)
         self.kmeans.fit(self.cluster_df)
         return self.kmeans
+
+    def get_clustering_results(self):
+        clustering_results = pd.DataFrame()
+        clustering_results["acceleration_abs_sum"] = self.cluster_df.apply(lambda r: np.abs(r).sum(), axis=1) * (self.checkpoints[1] - self.checkpoints[0])
+        # tarvitaanko muuta
+        clustering_results["cluster_id"] = self.kmeans.labels_
+
+        return clustering_results
+
+    def get_data_for_clusters(self):
+        clustering_results = self.get_clustering_results()
+        clusters = clustering_results.groupby("cluster_id")
+        data_for_clusters = pd.concat([clusters["acceleration_abs_sum"].count(), clusters["acceleration_abs_sum"].min(), clusters["acceleration_abs_sum"].max(), clusters["acceleration_abs_sum"].median(), clusters["acceleration_abs_sum"].mean()], axis=1)
+        data_for_clusters.columns=["count", "min_abs_accel", "max_abs_accel", "median_abs_accel", "mean_abs_accel"]
+        return data_for_clusters.sort_values("mean_abs_accel")
     
     def draw_cluster_centroids(self, start_station, end_station, clustered_based_on="acceleration", min_num_of_trains=10):
         clusters = pd.Series(self.kmeans.labels_, index=self.cluster_df.index, name="cluster_id")
@@ -573,8 +588,12 @@ class TrainLocations:
             upper_bound = max(upper_multiplier * median_dist, median_dist + min_error)
             # data.trains["in_analysis"] = data.trains["dist_from_speed"].apply(lambda d: d >= lower_bound and d <= upper_bound)
             data.trains["in_analysis"] = data.trains.apply(lambda r: filtering_fcn(r, lower_bound, upper_bound), axis=1)
-            data.location_df["in_analysis"] = data.location_df.apply(lambda r: data.trains.loc[(r["departureDate"], r["trainNumber"]), "in_analysis"], axis=1)
-            data.location_df = data.location_df[data.location_df["in_analysis"]].drop("in_analysis", axis=1).reset_index(drop=True)
+            try:
+                data.location_df["in_analysis"] = data.location_df.apply(lambda r: data.trains.loc[(r["departureDate"], r["trainNumber"]), "in_analysis"], axis=1)
+                data.location_df = data.location_df[data.location_df["in_analysis"]].drop("in_analysis", axis=1).reset_index(drop=True)
+            except ValueError as error:
+                print(f"{type(error)}: {data.start_station}-{data.end_station} {error}")
+
         return self.interval_dfs
 
 
@@ -641,6 +660,7 @@ class TrainLocations:
     def save_checkpoint_data_to_db(self, db_path=None, if_exists_action="fail"):
         if db_path is not None:
             self.route_db_path = db_path
+        save_df_to_db(self.clustering_data.location_df.reset_index(), "checkpoint_locations", db_path=self.db_path, if_exists_action=if_exists_action)
         for i, data in enumerate(self.interval_dfs):
             save_df_to_db(data.trains.reset_index(), f"trains_{i}",  db_path=self.route_db_path, if_exists_action=if_exists_action)
             save_df_to_db(data.location_df.reset_index(), f"locations_{i}",  db_path=self.route_db_path, if_exists_action=if_exists_action)
@@ -652,6 +672,9 @@ class TrainLocations:
         else:
             db_filename = f"{'-'.join(route)}.db"
             self.route_db_path = self.db_path.parent / db_filename
+        checkpoint_locations = get_df_from_db("checkpoint_locations", db_path=self.db_path)
+        if checkpoint_locations is not None:
+            self.clustering_data = ClusterData(checkpoint_locations, checkpoint_locations["dist_from_speed"].unique(), None, None)
         if verbose:
             print(f"Ladataan dataa DB:stä: {self.route_db_path}")
         try:
@@ -672,9 +695,11 @@ class TrainLocations:
             self.interval_dfs.append(IntervalDfs(station, route[i+1], locations["dist_from_speed"].max(), trains, c_locations, ClusterData(locations, locations["dist_from_speed"].unique(), None, None)))
 
     def checkpoint_data_exists(self):
-        if self.interval_dfs is None:
-            return False
+        # if self.interval_dfs is None:
+        #     return False
         if not self.interval_dfs:
+            return False
+        if self.clustering_data is None:
             return False
         for data in self.interval_dfs:
             if data.trains is None or data.trains.empty:
@@ -735,15 +760,21 @@ class TrainLocations:
             except ValueError as error:
                 print(f"{type(error)}: {error} ({k=}, shape={data.clustering_data.cluster_df.shape})")
 
-    def draw_cluster_centroids(self, clustered_based_on="acceleration"):
+    def show_clustering_results(self, clustered_based_on="acceleration"):
         if len(self.interval_dfs) > 1:
             try:
+                print(f"Clustering results for interval {self.start_station}-{self.end_station}")
                 self.clustering_data.draw_cluster_centroids(self.start_station, self.end_station, clustered_based_on)
+                print(self.clustering_data.get_data_for_clusters())
+                print()
             except AttributeError as error:
                 print(f"{self.start_station}-{self.end_station}: {type(error)}: {error}")
         for data in self.interval_dfs:
             try:
+                print(f"Clustering results for interval {data.start_station}-{data.end_station}")
                 data.draw_cluster_centroids(clustered_based_on)
+                print(data.clustering_data.get_data_for_clusters())
+                print()
             except AttributeError as error:
                 print(f"{data.start_station}-{data.end_station}: {type(error)}: {error}")
             # clusters = pd.Series(data.clustering_data.kmeans.labels_, index=data.clustering_data.cluster_df.index, name="cluster_id")
