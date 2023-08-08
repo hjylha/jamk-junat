@@ -229,6 +229,9 @@ class IntervalDfs:
     # cluster_df: pd.DataFrame
     # kmeans: KMeans
 
+    def get_interval_name(self):
+        return f"{self.start_station}-{self.end_station}"
+
     def scale_distance_and_speed(self):
         dist_reference = self.trains["dist_from_speed"]
         df = self.location_df.copy()
@@ -258,6 +261,9 @@ class IntervalDfs:
     
     def draw_cluster_centroids(self, clustered_based_on="acceleration"):
         self.clustering_data.draw_cluster_centroids(self.start_station, self.end_station, clustered_based_on)
+    
+    def get_acceleration_sums(self):
+        return self.clustering_data.get_clustering_results()["acceleration_abs_sum"]
 
 
 class TrainLocations:
@@ -281,6 +287,8 @@ class TrainLocations:
         self.interval_dfs = kwargs.get("interval_dfs")
         self.clustering_data = kwargs.get("clustering_data")
 
+    def get_interval_name(self):
+        return f"{self.start_station}-{self.end_station}"
 
     # jos haluaa kuluttaa aikaa...
     def find_trains_and_timetables(self, wait_time=None):
@@ -488,6 +496,7 @@ class TrainLocations:
 
     # jaetaan matka (ja data) osiin reitin perusteella
     def process_train_locations(self, route):
+        self.route = route
         trains = self.train_df[(self.train_df["locations_exist"] == True) & (self.train_df["stations"] == route)]
         # self.location_dfs = [pd.DataFrame() for _ in range(len(route) - 1)]
 
@@ -660,13 +669,17 @@ class TrainLocations:
     def save_checkpoint_data_to_db(self, db_path=None, if_exists_action="fail"):
         if db_path is not None:
             self.route_db_path = db_path
-        save_df_to_db(self.clustering_data.location_df.reset_index(), "checkpoint_locations", db_path=self.db_path, if_exists_action=if_exists_action)
+        else:
+            db_filename = f"{'-'.join(self.route)}.db"
+            self.route_db_path = self.db_path.parent / db_filename
+        save_df_to_db(self.clustering_data.location_df, "checkpoint_locations", db_path=self.db_path, if_exists_action=if_exists_action)
         for i, data in enumerate(self.interval_dfs):
             save_df_to_db(data.trains.reset_index(), f"trains_{i}",  db_path=self.route_db_path, if_exists_action=if_exists_action)
-            save_df_to_db(data.location_df.reset_index(), f"locations_{i}",  db_path=self.route_db_path, if_exists_action=if_exists_action)
-            save_df_to_db(data.clustering_data.location_df.reset_index(), f"checkpoint_locations_{i}",  db_path=self.route_db_path, if_exists_action=if_exists_action)
+            save_df_to_db(data.location_df, f"locations_{i}",  db_path=self.route_db_path, if_exists_action=if_exists_action)
+            save_df_to_db(data.clustering_data.location_df, f"checkpoint_locations_{i}",  db_path=self.route_db_path, if_exists_action=if_exists_action)
     
     def load_checkpoint_data_from_db(self, route, db_path=None, verbose=True):
+        self.route = route
         if db_path is not None:
             self.route_db_path = db_path
         else:
@@ -819,12 +832,19 @@ class TrainLocations:
         if draw_graphs:
             self.draw_cluster_centroids(clustered_based_on)
 
+    def get_acceleration_correlations(self, method="pearson"):
+        acceleration_sums = pd.DataFrame()
+        for data in self.interval_dfs:
+            acceleration_sums[data.get_interval_name()] = data.get_acceleration_sums()
+        acceleration_sums.dropna(inplace=True)
+        return acceleration_sums.corr(method=method)
+        
 
     def compare_clusters(self):
         clusters = pd.DataFrame()
-        clusters[f"{self.start_station}-{self.end_station}"] = pd.Series(self.clustering_data.kmeans.labels_, index=self.clustering_data.cluster_df.index)
+        clusters[self.get_interval_name()] = pd.Series(self.clustering_data.kmeans.labels_, index=self.clustering_data.cluster_df.index)
         for data in self.interval_dfs:
-            clusters[f"{data.start_station}-{data.end_station}"] = pd.Series(data.clustering_data.kmeans.labels_, index=data.clustering_data.cluster_df.index)
+            clusters[data.get_interval_name()] = pd.Series(data.clustering_data.kmeans.labels_, index=data.clustering_data.cluster_df.index)
         clusters.dropna(inplace=True)
 
         for comb in combinations(clusters.columns, 2):
