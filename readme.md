@@ -8,7 +8,8 @@ Kiihtyvyyksen tutkimuksen pääasiallinen tulos on junavuorojen luokittelu klust
 
 Esimerkkinä luokittelusta on alla oleva kuvaaja junaluokkien keskikiihtyvyyksistä.
 
-![klusterien keskipisteet](img/klusteri_esim.png)
+<!-- ![klusterien keskipisteet](img/klusteri_esim.png) -->
+<img src="img/klusteri_esim.png" alt="klusterien keskipisteet" width="80%" height="80%">
 
 Analyysin tulokset löytyvät seuraavista notebookeista:
 
