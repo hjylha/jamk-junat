@@ -6,7 +6,11 @@ Käytännössä tämä analyysi pyrkii käyttämään avoimesti saatavilla oleva
 
 Kiihtyvyyksen tutkimuksen pääasiallinen tulos on junavuorojen luokittelu klustereihin, joiden ominaisuuksia voi yrittää tulkita edelleen. 
 
-Analyysin tuloksia löytyy seuraavista notebookeista:
+Esimerkkinä luokittelusta on alla oleva kuvaaja junaluokkien keskikiihtyvyyksistä.
+
+![klusterien keskipisteet](img/klusteri_esim.png)
+
+Analyysin tulokset löytyvät seuraavista notebookeista:
 
 * [koko_prosessi.ipynb](koko_prosessi.ipynb) sisältää analyysin vaiheet asemien ja päivien valinnasta klusteroinnin tulosten esitykseen.
 
@@ -27,5 +31,10 @@ Analyysin tuloksia löytyy seuraavista notebookeista:
 * Ensimmäisiä data-kokeiluja: [junailua.ipynb](junailua.ipynb) ja [klusterointikokeilu.ipynb](klusterointikokeilu.ipynb) -->
 
 Tämä analyysi on suoritettu harjoittelussa JAMKissa kesällä 2023.
+
+<!-- Yhteyshenkilöt:
+Mika Rantonen
+Janne Alatalo
+Tuomo Sipola -->
 
 Liikennetietojen lähde [Fintraffic](https://www.fintraffic.fi/fi) / [Digitraffic](https://www.digitraffic.fi/), lisenssi [CC 4.0 BY](https://creativecommons.org/licenses/by/4.0/).
