@@ -790,47 +790,20 @@ class TrainLocations:
                 print()
             except AttributeError as error:
                 print(f"{data.start_station}-{data.end_station}: {type(error)}: {error}")
-            # clusters = pd.Series(data.clustering_data.kmeans.labels_, index=data.clustering_data.cluster_df.index, name="cluster_id")
-            # if clustered_based_on == "acceleration":
-            #     title_text = f"Acceleration cluster centroids ({data.start_station}-{data.end_station})"
-            #     draw_kmeans_centroids(data.clustering_data.kmeans, data.checkpoints, clusters, title_text=title_text)
-            # elif clustered_based_on == "speed":
-            #     title_text_speed = f"Speed cluster centroids ({data.start_station}-{data.end_station})" 
-            #     ylabel_text_speed = "speed ($km/h$)"
-            #     speed_indices = list(range(len(data.checkpoints)))
-            #     max_speed = np.round(3.6 * data.clustering_data.kmeans.cluster_centers_.max()) + 1
-            #     draw_kmeans_centroids(data.clustering_data.kmeans, data.checkpoints, clusters, limits=(0, max_speed), title_text=title_text_speed, ylabel_text=ylabel_text_speed, unit_multiplier=3.6, checkpoint_indices=speed_indices)
-            # elif clustered_based_on == "speed_and_acceleration":
-            #     # nopeus
-            #     title_text_speed = f"Speed cluster centroids ({data.start_station}-{data.end_station})" 
-            #     ylabel_text_speed = "speed ($km/h$)"
-            #     speed_indices = list(range(len(data.checkpoints)))
-            #     max_speed = np.round(3.6 * data.clustering_data.kmeans.cluster_centers_.max()) + 1
-            #     draw_kmeans_centroids(data.clustering_data.kmeans, data.checkpoints, clusters, limits=(0, max_speed), title_text=title_text_speed, ylabel_text=ylabel_text_speed, unit_multiplier=3.6, checkpoint_indices=speed_indices)
-            #     # kiihtyvyys
-            #     # TODO: EI OLE OIKEIN!
-            #     title_text_acceleration = f"Acceleration cluster centroids ({data.start_station}-{data.end_station})"
-            #     accel_indices = list(range(len(data.checkpoints), 2 * len(data.checkpoints)))
-            #     draw_kmeans_centroids(data.clustering_data.kmeans, data.checkpoints, clusters, title_text=title_text_acceleration, unit_multiplier=1, checkpoint_indices=accel_indices)
-            # else:
-            #     raise Exception(f"Not valid basis for clustering: {clustered_based_on}")
 
 
     def do_clustering(self, nums_of_clusters, rng=None, clustered_based_on="acceleration", draw_graphs=True):
         if clustered_based_on == "acceleration":
-            self.calculate_accelerations()
-            self.get_checkpoint_data_for_full_route()
             self.setup_for_clustering()
         elif clustered_based_on == "speed_and_acceleration":
-            self.calculate_accelerations(method="3_points")
-            self.get_checkpoint_data_for_full_route()
             self.setup_for_clustering(col_name=["speed", "speed_derivative"])
         elif clustered_based_on == "speed":
-            self.get_checkpoint_data_for_full_route()
             self.setup_for_clustering(col_name="speed")
+        else:
+            raise Exception(f"Invalid argument {clustered_based_on=}")
         self.run_kmeans_clustering(nums_of_clusters, rng)
         if draw_graphs:
-            self.draw_cluster_centroids(clustered_based_on)
+            self.show_clustering_results(clustered_based_on)
 
     def get_acceleration_correlations(self, method="pearson"):
         acceleration_sums = pd.DataFrame()
